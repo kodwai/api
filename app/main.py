@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     connect()
     run_migrations()
     logger.info("Database initialized and migrations applied")
+
+    from app.services.session_cleanup import start_session_cleanup
+    start_session_cleanup()
+
     yield
     logger.info("Shutting down Kodwai API...")
     disconnect()

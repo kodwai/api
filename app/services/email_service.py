@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 import resend
 
@@ -14,14 +15,22 @@ def _configure_resend() -> None:
     resend.api_key = settings.RESEND_API_KEY
 
 
-def send_verification_email(to: str, token: str, base_url: str) -> None:
-    """Send an email verification link to the user.
+def _send_in_background(fn, *args, **kwargs) -> None:
+    """Run an email send function in a background thread so it doesn't block the API."""
+    def _run():
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            pass  # Already logged inside the send functions
+    threading.Thread(target=_run, daemon=True).start()
 
-    Args:
-        to: Recipient email address.
-        token: Email verification token.
-        base_url: The client application base URL.
-    """
+
+def send_verification_email(to: str, token: str, base_url: str) -> None:
+    """Send an email verification link (non-blocking)."""
+    _send_in_background(_send_verification_email, to, token, base_url)
+
+
+def _send_verification_email(to: str, token: str, base_url: str) -> None:
     _configure_resend()
     verification_url = f"{base_url}/verify?token={token}"
 
@@ -54,18 +63,19 @@ def send_verification_email(to: str, token: str, base_url: str) -> None:
         logger.exception("Failed to send verification email to %s", to)
 
 
-def send_invitation_email(
+def send_invitation_email(to: str, org_name: str, inviter_name: str, invitation_id: str, base_url: str) -> None:
+    """Send a team invitation email (non-blocking)."""
+    _send_in_background(_send_invitation_email, to, org_name, inviter_name, invitation_id, base_url)
+
+
+def _send_invitation_email(
     to: str,
     org_name: str,
     inviter_name: str,
     invitation_id: str,
     base_url: str,
 ) -> None:
-    """Send a team invitation email.
-
-    Args:
-        to: Recipient email address.
-        org_name: Name of the inviting organization.
+    """
         inviter_name: Name of the person who sent the invite.
         invitation_id: The invitation ID for the accept link.
         base_url: The client application base URL.
@@ -102,7 +112,12 @@ def send_invitation_email(
         logger.exception("Failed to send invitation email to %s", to)
 
 
-def send_session_invitation_email(
+def send_session_invitation_email(to: str, candidate_name: str, project_title: str, session_id: str, session_token: str, time_limit: int, base_url: str) -> None:
+    """Send a session invitation email (non-blocking)."""
+    _send_in_background(_send_session_invitation_email, to, candidate_name, project_title, session_id, session_token, time_limit, base_url)
+
+
+def _send_session_invitation_email(
     to: str,
     candidate_name: str,
     project_title: str,
@@ -111,12 +126,7 @@ def send_session_invitation_email(
     time_limit: int,
     base_url: str,
 ) -> None:
-    """Send a session invitation email to a candidate.
-
-    Includes CLI commands to start the interview session.
-
-    Args:
-        to: Candidate email address.
+    """
         candidate_name: Name of the candidate.
         project_title: Title of the project/assessment.
         session_id: The session ID for the CLI start command.

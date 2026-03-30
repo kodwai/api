@@ -428,4 +428,11 @@ async def end_session(session_id: str, request: Request) -> dict:
 
 
 
+    # Trigger AI scoring asynchronously (best-effort)
+    from app.services.scoring_service import trigger_ai_scoring
+    try:
+        trigger_ai_scoring(session_id)
+    except Exception:
+        logger.exception("AI scoring failed for session %s", session_id)
+
     return {"status": "completed", "ended_at": now}

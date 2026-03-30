@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import connect, disconnect, run_migrations
-from app.routers import api_keys, auth, organizations, projects, sessions
+from app.routers import api_keys, auth, organizations, projects, scores, sessions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,6 +52,7 @@ app.include_router(organizations.router, prefix="/api")
 app.include_router(api_keys.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(sessions.router, prefix="/api")
+app.include_router(scores.router, prefix="/api")
 
 
 @app.get("/api/health")

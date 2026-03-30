@@ -8,6 +8,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.database import execute, fetch_all, fetch_one
+from app.services.encryption_service import decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +109,6 @@ def trigger_ai_scoring(session_id: str) -> dict | None:
 
     Returns the parsed score dict on success, or None on failure/skip.
     """
-    if not settings.SCORING_API_KEY:
-        logger.warning("SCORING_API_KEY is not configured; skipping AI scoring for session %s", session_id)
-        return None
-
     try:
         return _run_scoring_pipeline(session_id)
     except Exception:
@@ -128,7 +125,22 @@ def _run_scoring_pipeline(session_id: str) -> dict | None:
         logger.error("Session %s not found for scoring", session_id)
         return None
 
-    # 2. Fetch project (including rubric)
+    # 2. Fetch and decrypt the session's API key
+    api_key_row = fetch_one(
+        "SELECT encrypted_key, key_iv FROM api_keys WHERE id = ?",
+        (session["api_key_id"],),
+    )
+    if api_key_row is None:
+        logger.error("API key not found for session %s (api_key_id=%s)", session_id, session["api_key_id"])
+        return None
+
+    real_api_key = decrypt_api_key(
+        api_key_row["encrypted_key"],
+        api_key_row["key_iv"],
+        settings.ENCRYPTION_KEY,
+    )
+
+    # 3. Fetch project (including rubric)
     project = fetch_one("SELECT * FROM projects WHERE id = ?", (session["project_id"],))
     if project is None:
         logger.error("Project not found for session %s", session_id)
@@ -177,7 +189,7 @@ def _run_scoring_pipeline(session_id: str) -> dict | None:
     response = httpx.post(
         "https://api.anthropic.com/v1/messages",
         headers={
-            "x-api-key": settings.SCORING_API_KEY,
+            "x-api-key": real_api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },

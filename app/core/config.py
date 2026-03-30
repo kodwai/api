@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
 
     # Scoring
-    SCORING_API_KEY: str = ""
     SCORING_MODEL: str = "claude-sonnet-4-6"
 
     # CORS

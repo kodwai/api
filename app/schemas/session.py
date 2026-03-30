@@ -39,7 +39,8 @@ class SessionConfigResponse(BaseModel):
     session_id: str
     session_token: str
     webhook_secret: str
-    api_key: str  # decrypted Anthropic key
+    api_key: str  # session token (used as API key for proxy auth)
+    proxy_base_url: str  # URL for ANTHROPIC_BASE_URL
     project_title: str
     problem_statement_md: str
     time_limit_minutes: int

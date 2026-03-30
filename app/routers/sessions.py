@@ -274,19 +274,13 @@ def get_session_config(
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    # Fetch and decrypt API key
+    # Verify the API key exists (don't decrypt — key never leaves server)
     api_key_row = fetch_one(
-        "SELECT encrypted_key, key_iv FROM api_keys WHERE id = ?",
+        "SELECT id FROM api_keys WHERE id = ?",
         (session["api_key_id"],),
     )
     if api_key_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
-
-    decrypted_key = decrypt_api_key(
-        api_key_row["encrypted_key"],
-        api_key_row["key_iv"],
-        settings.ENCRYPTION_KEY,
-    )
 
     # Mark session as active
     now = datetime.now(timezone.utc).isoformat()
@@ -295,7 +289,6 @@ def get_session_config(
         (now, now, session_id),
     )
 
-
     # Determine budget: session override > project default
     budget = session["max_budget_usd"] or project["max_budget_usd"]
 
@@ -303,11 +296,16 @@ def get_session_config(
     allowed_tools = json.loads(project["allowed_tools"]) if project["allowed_tools"] else None
     disallowed_tools = json.loads(project["disallowed_tools"]) if project["disallowed_tools"] else None
 
+    # Build proxy URL — the CLI uses this as ANTHROPIC_BASE_URL
+    # The session_token acts as the API key (validated by the proxy)
+    proxy_base_url = f"{settings.APP_URL}/api/proxy/{session_id}"
+
     return SessionConfigResponse(
         session_id=session_id,
         session_token=session["session_token"],
         webhook_secret=session["webhook_secret"],
-        api_key=decrypted_key,
+        api_key=session["session_token"],  # Session token, NOT the real key
+        proxy_base_url=proxy_base_url,
         project_title=project["title"],
         problem_statement_md=project["problem_statement_md"],
         time_limit_minutes=project["time_limit_minutes"],
@@ -316,7 +314,7 @@ def get_session_config(
         disallowed_tools=disallowed_tools,
         rubric=rubric,
         max_budget_usd=budget,
-        starter_files=None,  # Will be populated when starter files feature is added
+        starter_files=None,
     )
 
 

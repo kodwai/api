@@ -17,7 +17,7 @@ os.environ.update({
     "APP_URL": "http://localhost:8000",
 })
 
-from app.core.database import connect, disconnect, run_migrations, get_connection
+from app.core.database import connect, disconnect, run_migrations, get_connection, execute, fetch_one
 from app.main import app
 
 
@@ -45,29 +45,34 @@ def client():
     return TestClient(app)
 
 
-@pytest.fixture
-def auth_headers(client: TestClient) -> dict[str, str]:
-    """Sign up a test user and return auth headers."""
+def _create_verified_user(client: TestClient, email: str, password: str, name: str, org_name: str) -> dict[str, str]:
+    """Sign up, verify email, login, return auth headers."""
     resp = client.post("/api/auth/signup", json={
-        "email": "admin@test.com",
-        "password": "testpass123",
-        "name": "Test Admin",
-        "organization_name": "Test Org",
+        "email": email,
+        "password": password,
+        "name": name,
+        "organization_name": org_name,
     })
     assert resp.status_code == 201
+
+    # Manually verify email in DB
+    user = fetch_one("SELECT id, email_verification_token FROM users WHERE email = ?", (email,))
+    execute("UPDATE users SET email_verified = 1, email_verification_token = NULL WHERE id = ?", (user["id"],))
+
+    # Login
+    resp = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert resp.status_code == 200
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def auth_headers(client: TestClient) -> dict[str, str]:
+    """Sign up a verified test user and return auth headers."""
+    return _create_verified_user(client, "admin@test.com", "testpass123", "Test Admin", "Test Org")
 
 
 @pytest.fixture
 def second_user_headers(client: TestClient) -> dict[str, str]:
-    """Sign up a second user in a different org."""
-    resp = client.post("/api/auth/signup", json={
-        "email": "other@test.com",
-        "password": "testpass123",
-        "name": "Other User",
-        "organization_name": "Other Org",
-    })
-    assert resp.status_code == 201
-    token = resp.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    """Sign up a second verified user in a different org."""
+    return _create_verified_user(client, "other@test.com", "testpass123", "Other User", "Other Org")

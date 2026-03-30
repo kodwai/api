@@ -23,7 +23,7 @@ def send_verification_email(to: str, token: str, base_url: str) -> None:
         base_url: The client application base URL.
     """
     _configure_resend()
-    verification_url = f"{base_url}/verify-email?token={token}"
+    verification_url = f"{base_url}/verify?token={token}"
 
     try:
         resend.Emails.send(
@@ -107,6 +107,7 @@ def send_session_invitation_email(
     candidate_name: str,
     project_title: str,
     session_id: str,
+    session_token: str,
     time_limit: int,
     base_url: str,
 ) -> None:
@@ -141,7 +142,7 @@ def send_session_invitation_email(
                     <p>Run the following command in your terminal to begin:</p>
                     <div style="background-color: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px;
                                 font-family: monospace; margin: 12px 0;">
-                        npx kodwai start {session_id}
+                        npx kodwai start {session_id} --token {session_token}
                     </div>
                     <p style="color: #6b7280; font-size: 14px; margin-top: 16px;">
                         <strong>Alternative install methods:</strong>

@@ -154,6 +154,7 @@ def create_session(body: SessionCreate, current_user: CurrentUser) -> SessionRes
         candidate_name=body.candidate_name,
         project_title=project["title"],
         session_id=session_id,
+        session_token=session_token,
         time_limit=project["time_limit_minutes"],
         base_url=settings.APP_URL,
     )
@@ -183,6 +184,60 @@ def get_session(session_id: str, current_user: CurrentUser) -> SessionResponse:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     return _row_to_response(row)
+
+
+@router.get("/{session_id}/events")
+def list_session_events(session_id: str, current_user: CurrentUser) -> dict:
+    """List all events for a session (must belong to user's org)."""
+    org_id = current_user["organization_id"]
+
+    session = fetch_one(
+        "SELECT id FROM sessions WHERE id = ? AND organization_id = ?",
+        (session_id, org_id),
+    )
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    events = fetch_all(
+        """SELECT id, event_type as type, data, timestamp
+           FROM session_events
+           WHERE session_id = ?
+           ORDER BY timestamp ASC""",
+        (session_id,),
+    )
+
+    # Parse JSON data field
+    import json as _json
+    for e in events:
+        if isinstance(e.get("data"), str):
+            try:
+                e["data"] = _json.loads(e["data"])
+            except (ValueError, TypeError):
+                pass
+
+    # Also fetch file changes and merge them in
+    file_changes = fetch_all(
+        """SELECT file_path, content, change_type, timestamp
+           FROM file_changes
+           WHERE session_id = ?
+           ORDER BY timestamp ASC""",
+        (session_id,),
+    )
+    for fc in file_changes:
+        events.append({
+            "type": "file.change",
+            "data": {
+                "file_path": fc["file_path"],
+                "content": fc["content"],
+                "change_type": fc["change_type"],
+            },
+            "timestamp": fc["timestamp"],
+        })
+
+    # Sort all events by timestamp
+    events.sort(key=lambda e: e.get("timestamp", ""))
+
+    return {"events": events}
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +295,7 @@ def get_session_config(
         (now, now, session_id),
     )
 
+
     # Determine budget: session override > project default
     budget = session["max_budget_usd"] or project["max_budget_usd"]
 
@@ -288,6 +344,7 @@ async def create_session_event(session_id: str, request: Request) -> dict:
         ),
     )
 
+
     return {"id": event_id, "status": "stored"}
 
 
@@ -315,6 +372,7 @@ async def create_session_file(session_id: str, request: Request) -> dict:
             now,
         ),
     )
+
 
     return {"id": change_id, "status": "stored"}
 
@@ -367,5 +425,7 @@ async def end_session(session_id: str, request: Request) -> dict:
                     now,
                 ),
             )
+
+
 
     return {"status": "completed", "ended_at": now}

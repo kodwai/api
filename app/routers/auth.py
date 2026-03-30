@@ -10,8 +10,8 @@ from app.services import auth_service
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/signup", response_model=TokenResponse, status_code=201)
-def signup(body: SignupRequest) -> TokenResponse:
+@router.post("/signup", status_code=201)
+def signup(body: SignupRequest) -> dict:
     """Register a new user and organization."""
     result = auth_service.signup(
         email=body.email,
@@ -20,7 +20,7 @@ def signup(body: SignupRequest) -> TokenResponse:
         organization_name=body.organization_name,
         client_url=settings.CLIENT_URL,
     )
-    return TokenResponse(access_token=result["access_token"])
+    return result
 
 
 @router.post("/login", response_model=TokenResponse)

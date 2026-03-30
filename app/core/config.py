@@ -21,9 +21,6 @@ class Settings(BaseSettings):
     SCORING_API_KEY: str = ""
     SCORING_MODEL: str = "claude-sonnet-4-6"
 
-    # Ably
-    ABLY_API_KEY: str = ""
-
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
@@ -35,7 +32,7 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": (".env", ".env.local"), "env_file_encoding": "utf-8"}
 
 
 settings = Settings()  # type: ignore[call-arg]

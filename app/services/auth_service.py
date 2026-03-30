@@ -51,18 +51,10 @@ def signup(
         (user_id, email, password_hash, name, org_id, email_verification_token),
     )
 
-    # Send verification email (fire and forget)
+    # Send verification email
     send_verification_email(email, email_verification_token, client_url)
 
-    # Create access token
-    access_token = create_access_token({"sub": user_id})
-
-    user = fetch_one(
-        "SELECT id, email, name, role, organization_id, email_verified, created_at FROM users WHERE id = ?",
-        (user_id,),
-    )
-
-    return {"access_token": access_token, "user": user}
+    return {"message": "Account created. Please check your email to verify your account."}
 
 
 def login(email: str, password: str) -> dict[str, Any]:
@@ -85,6 +77,12 @@ def login(email: str, password: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+
+    if not user["email_verified"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before signing in. Check your inbox for the verification link.",
         )
 
     access_token = create_access_token({"sub": user["id"]})

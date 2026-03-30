@@ -53,38 +53,39 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     api_key_id TEXT NOT NULL REFERENCES api_keys(id),
+    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     candidate_name TEXT NOT NULL,
     candidate_email TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'active', 'completed', 'expired', 'error')),
     session_token TEXT NOT NULL UNIQUE,
     webhook_secret TEXT NOT NULL,
+    max_budget_usd REAL,
     started_at TEXT,
     ended_at TEXT,
     end_reason TEXT,
     total_cost_usd REAL,
-    num_turns INTEGER,
+    total_tokens INTEGER,
     duration_ms INTEGER,
-    token_usage_input INTEGER,
-    token_usage_output INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS session_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL,
-    payload TEXT NOT NULL,             -- JSON blob
+    data TEXT,                           -- JSON blob
     timestamp TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS file_changes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     file_path TEXT NOT NULL,
-    change_type TEXT NOT NULL CHECK (change_type IN ('add', 'modify', 'delete')),
-    diff TEXT,
+    content TEXT,
+    change_type TEXT NOT NULL CHECK (change_type IN ('create', 'update', 'delete')),
     timestamp TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -146,6 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_users_verification ON users(email_verification_to
 CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys(organization_id);
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(organization_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_org ON sessions(organization_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events(session_id, timestamp);

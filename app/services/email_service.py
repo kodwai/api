@@ -100,3 +100,66 @@ def send_invitation_email(
         logger.info("Invitation email sent to %s for org %s", to, org_name)
     except Exception:
         logger.exception("Failed to send invitation email to %s", to)
+
+
+def send_session_invitation_email(
+    to: str,
+    candidate_name: str,
+    project_title: str,
+    session_id: str,
+    time_limit: int,
+    base_url: str,
+) -> None:
+    """Send a session invitation email to a candidate.
+
+    Includes CLI commands to start the interview session.
+
+    Args:
+        to: Candidate email address.
+        candidate_name: Name of the candidate.
+        project_title: Title of the project/assessment.
+        session_id: The session ID for the CLI start command.
+        time_limit: Time limit in minutes.
+        base_url: The application base URL.
+    """
+    _configure_resend()
+
+    try:
+        resend.Emails.send(
+            {
+                "from": "Kodwai <noreply@kodwai.com>",
+                "to": [to],
+                "subject": f"You're invited to a coding assessment - {project_title}",
+                "html": f"""
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Hi {candidate_name},</h2>
+                    <p>You've been invited to complete a coding assessment for <strong>{project_title}</strong>.</p>
+                    <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                        <p style="margin: 0 0 8px 0;"><strong>Time Limit:</strong> {time_limit} minutes</p>
+                    </div>
+                    <h3>Getting Started</h3>
+                    <p>Run the following command in your terminal to begin:</p>
+                    <div style="background-color: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px;
+                                font-family: monospace; margin: 12px 0;">
+                        npx kodwai start {session_id}
+                    </div>
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 16px;">
+                        <strong>Alternative install methods:</strong>
+                    </p>
+                    <div style="background-color: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px;
+                                font-family: monospace; font-size: 13px; margin: 8px 0;">
+                        # macOS / Linux<br/>
+                        curl -fsSL https://kodwai.com/install.sh | sh<br/><br/>
+                        # Windows (PowerShell)<br/>
+                        irm https://kodwai.com/install.ps1 | iex
+                    </div>
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 16px;">
+                        The timer will start once you run the command. Good luck!
+                    </p>
+                </div>
+                """,
+            }
+        )
+        logger.info("Session invitation email sent to %s for session %s", to, session_id)
+    except Exception:
+        logger.exception("Failed to send session invitation email to %s", to)

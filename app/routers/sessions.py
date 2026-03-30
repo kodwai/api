@@ -428,11 +428,16 @@ async def end_session(session_id: str, request: Request) -> dict:
 
 
 
-    # Trigger AI scoring asynchronously (best-effort)
+    # Trigger AI scoring in background thread (non-blocking)
+    import threading
     from app.services.scoring_service import trigger_ai_scoring
-    try:
-        trigger_ai_scoring(session_id)
-    except Exception:
-        logger.exception("AI scoring failed for session %s", session_id)
+
+    def _score_in_background():
+        try:
+            trigger_ai_scoring(session_id)
+        except Exception:
+            logger.exception("AI scoring failed for session %s", session_id)
+
+    threading.Thread(target=_score_in_background, daemon=True).start()
 
     return {"status": "completed", "ended_at": now}

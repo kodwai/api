@@ -186,7 +186,7 @@ def _run_scoring_pipeline(session_id: str) -> dict | None:
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}],
         },
-        timeout=120.0,
+        timeout=300.0,
     )
 
     if response.status_code != 200:

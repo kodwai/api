@@ -31,6 +31,18 @@ def connect() -> libsql.Connection:
     return _connection
 
 
+def reconnect() -> libsql.Connection:
+    """Force reconnect to the database (handles stale Turso streams)."""
+    global _connection
+    try:
+        if _connection is not None:
+            _connection.close()
+    except Exception:
+        pass
+    _connection = None
+    return connect()
+
+
 def disconnect() -> None:
     """Close the database connection."""
     global _connection
@@ -65,27 +77,45 @@ def get_db() -> libsql.Connection:
     return get_connection()
 
 
+def _execute_with_retry(fn, *args, **kwargs):
+    """Execute a DB function, reconnecting once on stream errors."""
+    try:
+        return fn(*args, **kwargs)
+    except (ValueError, Exception) as e:
+        if "stream not found" in str(e) or "stream" in str(e).lower():
+            logger.warning("Turso stream error, reconnecting: %s", e)
+            reconnect()
+            return fn(*args, **kwargs)
+        raise
+
+
 def fetch_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     """Execute a query and return a single row as a dict, or None."""
-    conn = get_connection()
-    cursor = conn.execute(query, params)
-    row = cursor.fetchone()
-    if row is None:
-        return None
-    columns = [description[0] for description in cursor.description]
-    return dict(zip(columns, row))
+    def _run():
+        conn = get_connection()
+        cursor = conn.execute(query, params)
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        columns = [description[0] for description in cursor.description]
+        return dict(zip(columns, row))
+    return _execute_with_retry(_run)
 
 
 def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     """Execute a query and return all rows as dicts."""
-    conn = get_connection()
-    cursor = conn.execute(query, params)
-    columns = [description[0] for description in cursor.description]
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    def _run():
+        conn = get_connection()
+        cursor = conn.execute(query, params)
+        columns = [description[0] for description in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    return _execute_with_retry(_run)
 
 
 def execute(query: str, params: tuple[Any, ...] = ()) -> None:
     """Execute a write query and commit."""
-    conn = get_connection()
-    conn.execute(query, params)
-    conn.commit()
+    def _run():
+        conn = get_connection()
+        conn.execute(query, params)
+        conn.commit()
+    _execute_with_retry(_run)

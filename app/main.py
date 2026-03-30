@@ -31,6 +31,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
     logger.info("Shutting down Kodwai API...")
+    from app.routers.proxy import http_client
+    await http_client.aclose()
     disconnect()
 
 

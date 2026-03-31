@@ -46,18 +46,25 @@ SKIP_RESPONSE_HEADERS = {
 # In-memory cost tracker (fast path for budget checks)
 _session_costs: dict[str, float] = defaultdict(float)
 
-# Prices per token (USD)
+# Prices per token (USD) — updated 2026-03-31
 MODEL_PRICES: dict[str, dict[str, float]] = {
-    # Sonnet
-    "claude-sonnet-4-6-20250514": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
-    "claude-sonnet-4-5-20250514": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
-    # Opus
-    "claude-opus-4-6-20250514": {"input": 15.0 / 1e6, "output": 75.0 / 1e6, "cache_write": 18.75 / 1e6, "cache_read": 1.50 / 1e6},
-    # Haiku
-    "claude-haiku-4-5-20241022": {"input": 0.80 / 1e6, "output": 4.0 / 1e6, "cache_write": 1.0 / 1e6, "cache_read": 0.08 / 1e6},
+    # Opus 4.6 / 4.5
+    "claude-opus-4-6": {"input": 5.0 / 1e6, "output": 25.0 / 1e6, "cache_write": 6.25 / 1e6, "cache_read": 0.50 / 1e6},
+    "claude-opus-4-5": {"input": 5.0 / 1e6, "output": 25.0 / 1e6, "cache_write": 6.25 / 1e6, "cache_read": 0.50 / 1e6},
+    # Opus 4.1 / 4.0 (legacy)
+    "claude-opus-4-1": {"input": 15.0 / 1e6, "output": 75.0 / 1e6, "cache_write": 18.75 / 1e6, "cache_read": 1.50 / 1e6},
+    "claude-opus-4-0": {"input": 15.0 / 1e6, "output": 75.0 / 1e6, "cache_write": 18.75 / 1e6, "cache_read": 1.50 / 1e6},
+    "claude-opus-4-20250514": {"input": 15.0 / 1e6, "output": 75.0 / 1e6, "cache_write": 18.75 / 1e6, "cache_read": 1.50 / 1e6},
+    # Sonnet 4.6 / 4.5 / 4.0
+    "claude-sonnet-4-6": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
+    "claude-sonnet-4-5": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
+    "claude-sonnet-4-0": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
+    "claude-sonnet-4-20250514": {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6},
+    # Haiku 4.5
+    "claude-haiku-4-5": {"input": 1.0 / 1e6, "output": 5.0 / 1e6, "cache_write": 1.25 / 1e6, "cache_read": 0.10 / 1e6},
 }
 
-# Default prices if model not in table (use Sonnet pricing as safe default)
+# Default prices (use Sonnet pricing as safe default)
 _DEFAULT_PRICES = {"input": 3.0 / 1e6, "output": 15.0 / 1e6, "cache_write": 3.75 / 1e6, "cache_read": 0.30 / 1e6}
 
 
@@ -65,10 +72,17 @@ def _get_model_prices(model: str) -> dict[str, float]:
     """Get per-token prices for a model. Falls back to Sonnet pricing."""
     if model in MODEL_PRICES:
         return MODEL_PRICES[model]
-    # Try prefix match (model IDs often have date suffixes)
+    # Try prefix match — model IDs have date suffixes like claude-opus-4-6-20250514
+    # Strip date suffix and try again
     for key, prices in MODEL_PRICES.items():
-        if model.startswith(key.rsplit("-", 1)[0]):
+        if model.startswith(key):
             return prices
+    # Try removing the date part from the model ID
+    parts = model.rsplit("-", 1)
+    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 8:
+        base = parts[0]
+        if base in MODEL_PRICES:
+            return MODEL_PRICES[base]
     return _DEFAULT_PRICES
 
 
@@ -254,7 +268,9 @@ async def proxy_anthropic(session_id: str, path: str, request: Request) -> Respo
                     _session_costs[session["id"]] = _session_costs.get(session["id"], session["total_cost_usd"] or 0) + cost
                     import threading
                     threading.Thread(target=_persist_cost, args=(session["id"], cost), daemon=True).start()
-                    logger.info("Session %s: +$%.4f (in: %d, out: %d)", session["id"], cost, usage["input_tokens"], usage["output_tokens"])
+                    logger.info("Session %s [%s]: +$%.4f (in: %d, out: %d, cache_write: %d, cache_read: %d)",
+                        session["id"], model, cost, usage["input_tokens"], usage["output_tokens"],
+                        usage["cache_creation_input_tokens"], usage["cache_read_input_tokens"])
 
             async def cleanup():
                 await upstream_resp.aclose()
@@ -290,7 +306,9 @@ async def proxy_anthropic(session_id: str, path: str, request: Request) -> Respo
                         _session_costs[session["id"]] = _session_costs.get(session["id"], session["total_cost_usd"] or 0) + cost
                         import threading
                         threading.Thread(target=_persist_cost, args=(session["id"], cost), daemon=True).start()
-                        logger.info("Session %s: +$%.4f (in: %d, out: %d)", session["id"], cost, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+                        logger.info("Session %s [%s]: +$%.4f (in: %d, out: %d, cache_write: %d, cache_read: %d)",
+                            session["id"], resp_model, cost, usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                            usage.get("cache_creation_input_tokens", 0), usage.get("cache_read_input_tokens", 0))
                 except (json.JSONDecodeError, KeyError):
                     pass
 

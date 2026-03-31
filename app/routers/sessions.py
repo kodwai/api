@@ -36,7 +36,14 @@ _SESSION_COLUMNS = """
     s.candidate_name, s.candidate_email, s.status, s.session_token,
     s.started_at, s.ended_at, s.end_reason, s.total_cost_usd,
     s.total_tokens, s.max_budget_usd, s.created_at, s.updated_at,
-    p.title AS project_title
+    p.title AS project_title,
+    sc.overall_score
+"""
+
+_SESSION_JOINS = """
+    FROM sessions s
+    JOIN projects p ON s.project_id = p.id
+    LEFT JOIN scores sc ON sc.session_id = s.id AND sc.score_type = 'ai'
 """
 
 
@@ -86,8 +93,7 @@ def list_sessions(
 
     query = f"""
         SELECT {_SESSION_COLUMNS}
-        FROM sessions s
-        JOIN projects p ON s.project_id = p.id
+        {_SESSION_JOINS}
         WHERE s.organization_id = ?
     """
     params: list = [org_id]
@@ -161,8 +167,7 @@ def create_session(body: SessionCreate, current_user: CurrentUser) -> SessionRes
 
     row = fetch_one(
         f"""SELECT {_SESSION_COLUMNS}
-            FROM sessions s
-            JOIN projects p ON s.project_id = p.id
+            {_SESSION_JOINS}
             WHERE s.id = ?""",
         (session_id,),
     )
@@ -176,8 +181,7 @@ def get_session(session_id: str, current_user: CurrentUser) -> SessionResponse:
 
     row = fetch_one(
         f"""SELECT {_SESSION_COLUMNS}
-            FROM sessions s
-            JOIN projects p ON s.project_id = p.id
+            {_SESSION_JOINS}
             WHERE s.id = ? AND s.organization_id = ?""",
         (session_id, org_id),
     )
@@ -391,10 +395,13 @@ async def end_session(session_id: str, request: Request) -> dict:
 
     now = datetime.now(timezone.utc).isoformat()
 
+    # Don't overwrite proxy-tracked cost with null from CLI
     execute(
         """UPDATE sessions
            SET status = 'completed', ended_at = ?, end_reason = ?,
-               total_cost_usd = ?, total_tokens = ?, updated_at = ?
+               total_cost_usd = COALESCE(?, total_cost_usd),
+               total_tokens = COALESCE(?, total_tokens),
+               updated_at = ?
            WHERE id = ?""",
         (
             now,

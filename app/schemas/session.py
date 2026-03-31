@@ -31,6 +31,7 @@ class SessionResponse(BaseModel):
     created_at: str
     updated_at: str
     project_title: str | None = None
+    overall_score: float | None = None
 
 
 class SessionConfigResponse(BaseModel):

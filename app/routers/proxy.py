@@ -97,12 +97,13 @@ def _persist_cost(session_id: str, cost: float) -> None:
 # ── Session validation ──────────────────────────────
 
 
-def _get_session_and_key(session_token: str) -> tuple[dict, str]:
+def _get_session_and_key(session_token: str, model: str | None = None) -> tuple[dict, str]:
     """Validate session token, check limits, return (session, decrypted_api_key)."""
     session = fetch_one(
         """SELECT s.id, s.status, s.started_at, s.api_key_id, s.max_budget_usd,
                   s.total_cost_usd, s.organization_id,
-                  p.time_limit_minutes, p.max_budget_usd as project_budget_usd
+                  p.time_limit_minutes, p.max_budget_usd as project_budget_usd,
+                  p.allowed_tools as p_allowed_tools
            FROM sessions s
            JOIN projects p ON s.project_id = p.id
            WHERE s.session_token = ?""",

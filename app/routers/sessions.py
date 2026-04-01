@@ -190,6 +190,19 @@ def get_session(session_id: str, current_user: CurrentUser) -> SessionResponse:
     return _row_to_response(row)
 
 
+@router.delete("/{session_id}", status_code=204)
+def delete_session(session_id: str, current_user: CurrentUser) -> None:
+    """Delete a session and all related data (cascades)."""
+    org_id = current_user["organization_id"]
+    existing = fetch_one(
+        "SELECT id FROM sessions WHERE id = ? AND organization_id = ?",
+        (session_id, org_id),
+    )
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
 @router.get("/{session_id}/events")
 def list_session_events(session_id: str, current_user: CurrentUser) -> dict:
     """List all events for a session (must belong to user's org)."""

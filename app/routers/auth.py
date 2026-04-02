@@ -12,12 +12,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", status_code=201)
 def signup(body: SignupRequest) -> dict:
-    """Register a new user and organization."""
+    """Register a new user. Company users get an organization; developers do not."""
     result = auth_service.signup(
         email=body.email,
         password=body.password,
         name=body.name,
+        user_type=body.user_type,
         organization_name=body.organization_name,
+        username=body.username,
         client_url=settings.CLIENT_URL,
     )
     return result

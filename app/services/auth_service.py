@@ -14,17 +14,12 @@ def signup(
     email: str,
     password: str,
     name: str,
-    organization_name: str,
-    client_url: str,
+    user_type: str = "company",
+    organization_name: str | None = None,
+    username: str | None = None,
+    client_url: str = "",
 ) -> dict[str, Any]:
-    """Register a new user and organization.
-
-    Creates the organization first, then the admin user, and sends
-    a verification email.
-
-    Returns:
-        A dict with 'access_token' and 'user'.
-    """
+    """Register a new user. Company users get an organization; developer users do not."""
     # Check if email already taken
     existing = fetch_one("SELECT id FROM users WHERE email = ?", (email,))
     if existing:
@@ -33,23 +28,52 @@ def signup(
             detail="Email already registered",
         )
 
-    # Create organization
-    org_id = secrets.token_hex(16)
-    execute(
-        "INSERT INTO organizations (id, name) VALUES (?, ?)",
-        (org_id, organization_name),
-    )
-
-    # Create user
     user_id = secrets.token_hex(16)
     password_hash = hash_password(password)
     email_verification_token = secrets.token_hex(32)
 
-    execute(
-        """INSERT INTO users (id, email, password_hash, name, role, organization_id, email_verification_token)
-           VALUES (?, ?, ?, ?, 'admin', ?, ?)""",
-        (user_id, email, password_hash, name, org_id, email_verification_token),
-    )
+    if user_type == "company":
+        if not organization_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="organization_name is required for company accounts",
+            )
+        # Create organization
+        org_id = secrets.token_hex(16)
+        execute(
+            "INSERT INTO organizations (id, name) VALUES (?, ?)",
+            (org_id, organization_name),
+        )
+        execute(
+            """INSERT INTO users (id, email, password_hash, name, role, organization_id, user_type, email_verification_token)
+               VALUES (?, ?, ?, ?, 'admin', ?, 'company', ?)""",
+            (user_id, email, password_hash, name, org_id, email_verification_token),
+        )
+    else:
+        # Developer signup — no org
+        if not username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="username is required for developer accounts",
+            )
+        # Check username uniqueness
+        existing_username = fetch_one("SELECT id FROM users WHERE username = ?", (username,))
+        if existing_username:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            )
+        execute(
+            """INSERT INTO users (id, email, password_hash, name, username, role, organization_id, user_type, email_verification_token)
+               VALUES (?, ?, ?, ?, ?, 'admin', NULL, 'developer', ?)""",
+            (user_id, email, password_hash, name, username, email_verification_token),
+        )
+        # Create developer profile
+        profile_id = secrets.token_hex(16)
+        execute(
+            "INSERT INTO developer_profiles (id, user_id) VALUES (?, ?)",
+            (profile_id, user_id),
+        )
 
     # Send verification email
     send_verification_email(email, email_verification_token, client_url)
@@ -64,7 +88,7 @@ def login(email: str, password: str) -> dict[str, Any]:
         A dict with 'access_token' and 'user'.
     """
     user = fetch_one(
-        "SELECT id, email, password_hash, name, role, organization_id, email_verified, created_at FROM users WHERE email = ?",
+        "SELECT id, email, password_hash, name, role, organization_id, user_type, username, email_verified, created_at FROM users WHERE email = ?",
         (email,),
     )
     if user is None:
@@ -115,7 +139,7 @@ def verify_email(token: str) -> dict[str, Any]:
     )
 
     updated_user = fetch_one(
-        "SELECT id, email, name, role, organization_id, email_verified, created_at FROM users WHERE id = ?",
+        "SELECT id, email, name, role, organization_id, user_type, username, email_verified, created_at FROM users WHERE id = ?",
         (user["id"],),
     )
     return updated_user  # type: ignore[return-value]

@@ -52,23 +52,74 @@ def disconnect() -> None:
         logger.info("Disconnected from Turso database")
 
 
+def _split_sql(sql: str) -> list[str]:
+    """Split SQL on semicolons that are outside of string literals."""
+    statements: list[str] = []
+    current: list[str] = []
+    in_string = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'" and not in_string:
+            in_string = True
+            current.append(ch)
+        elif ch == "'" and in_string:
+            # Check for escaped quote ('')
+            if i + 1 < len(sql) and sql[i + 1] == "'":
+                current.append("''")
+                i += 1
+            else:
+                in_string = False
+                current.append(ch)
+        elif ch == ";" and not in_string:
+            statements.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    if current:
+        statements.append("".join(current))
+    return statements
+
+
 def run_migrations() -> None:
-    """Execute all SQL migration files in order."""
+    """Execute all SQL migration files in order, skipping already-applied ones."""
     conn = get_connection()
     migrations_dir = Path(__file__).resolve().parent.parent.parent / "migrations"
     if not migrations_dir.exists():
         logger.warning("No migrations directory found at %s", migrations_dir)
         return
 
+    # Create migrations tracking table if it doesn't exist
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
+    conn.commit()
+
+    # Get already-applied migrations
+    cursor = conn.execute("SELECT name FROM _migrations")
+    applied = {row[0] for row in cursor.fetchall()}
+
     migration_files = sorted(migrations_dir.glob("*.sql"))
     for migration_file in migration_files:
+        if migration_file.name in applied:
+            logger.info("Skipping already-applied migration: %s", migration_file.name)
+            continue
+
         logger.info("Running migration: %s", migration_file.name)
         sql = migration_file.read_text()
-        for statement in sql.split(";"):
-            statement = statement.strip()
-            if statement:
-                conn.execute(statement)
+        # Split on semicolons that are NOT inside string literals
+        statements = _split_sql(sql)
+        for statement in statements:
+            # Strip comment-only lines
+            lines = [line for line in statement.strip().splitlines() if line.strip() and not line.strip().startswith("--")]
+            cleaned = "\n".join(lines).strip()
+            if cleaned:
+                conn.execute(cleaned)
+        conn.execute("INSERT INTO _migrations (name) VALUES (?)", (migration_file.name,))
         conn.commit()
+        logger.info("Applied migration: %s", migration_file.name)
+
     logger.info("All migrations applied successfully")
 
 

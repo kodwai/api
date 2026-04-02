@@ -39,7 +39,7 @@ def get_current_user(
         )
 
     user = fetch_one(
-        "SELECT id, email, name, role, organization_id, email_verified, created_at FROM users WHERE id = ?",
+        "SELECT id, email, name, role, organization_id, user_type, username, email_verified, is_banned, banned_reason, created_at FROM users WHERE id = ?",
         (user_id,),
     )
     if user is None:
@@ -47,6 +47,13 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if user.get("is_banned"):
+        reason = user.get("banned_reason") or "Account suspended"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Account banned: {reason}",
         )
 
     return user

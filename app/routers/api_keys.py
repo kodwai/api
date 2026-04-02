@@ -48,39 +48,53 @@ def _validate_anthropic_key(api_key: str) -> bool:
         return True
 
 
+def _is_developer(user: dict) -> bool:
+    return user.get("user_type") == "developer"
+
+
 @router.get("", response_model=list[ApiKeyResponse])
 def list_api_keys(current_user: CurrentUser) -> list[ApiKeyResponse]:
-    """List all API keys for the current user's organization (masked)."""
-    rows = fetch_all(
-        """SELECT id, label, key_last4, is_active, created_at
-           FROM api_keys
-           WHERE organization_id = ?
-           ORDER BY created_at DESC""",
-        (current_user["organization_id"],),
-    )
+    """List API keys scoped to org (company) or user (developer)."""
+    if _is_developer(current_user):
+        rows = fetch_all(
+            """SELECT id, label, key_last4, is_active, created_at
+               FROM api_keys WHERE user_id = ? ORDER BY created_at DESC""",
+            (current_user["id"],),
+        )
+    else:
+        rows = fetch_all(
+            """SELECT id, label, key_last4, is_active, created_at
+               FROM api_keys WHERE organization_id = ? ORDER BY created_at DESC""",
+            (current_user["organization_id"],),
+        )
     return [ApiKeyResponse(**row) for row in rows]
 
 
 @router.post("", response_model=ApiKeyResponse, status_code=201)
 def create_api_key(body: ApiKeyCreate, current_user: CurrentUser) -> ApiKeyResponse:
     """Add a new Anthropic API key. Validates the key before storing."""
-    # Validate the key against Anthropic's API
     if not _validate_anthropic_key(body.key):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Anthropic API key. Please check the key and try again.",
         )
 
-    # Encrypt the key
     encrypted, iv = encrypt_api_key(body.key, settings.ENCRYPTION_KEY)
     key_last4 = body.key[-4:]
     key_id = secrets.token_hex(16)
 
-    execute(
-        """INSERT INTO api_keys (id, organization_id, encrypted_key, key_iv, key_last4, label, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, 1)""",
-        (key_id, current_user["organization_id"], encrypted, iv, key_last4, body.label),
-    )
+    if _is_developer(current_user):
+        execute(
+            """INSERT INTO api_keys (id, user_id, encrypted_key, key_iv, key_last4, label, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, 1)""",
+            (key_id, current_user["id"], encrypted, iv, key_last4, body.label),
+        )
+    else:
+        execute(
+            """INSERT INTO api_keys (id, organization_id, encrypted_key, key_iv, key_last4, label, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, 1)""",
+            (key_id, current_user["organization_id"], encrypted, iv, key_last4, body.label),
+        )
 
     row = fetch_one(
         "SELECT id, label, key_last4, is_active, created_at FROM api_keys WHERE id = ?",
@@ -92,10 +106,16 @@ def create_api_key(body: ApiKeyCreate, current_user: CurrentUser) -> ApiKeyRespo
 @router.delete("/{key_id}", status_code=204)
 def delete_api_key(key_id: str, current_user: CurrentUser) -> None:
     """Delete an API key."""
-    existing = fetch_one(
-        "SELECT id FROM api_keys WHERE id = ? AND organization_id = ?",
-        (key_id, current_user["organization_id"]),
-    )
+    if _is_developer(current_user):
+        existing = fetch_one(
+            "SELECT id FROM api_keys WHERE id = ? AND user_id = ?",
+            (key_id, current_user["id"]),
+        )
+    else:
+        existing = fetch_one(
+            "SELECT id FROM api_keys WHERE id = ? AND organization_id = ?",
+            (key_id, current_user["organization_id"]),
+        )
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
 

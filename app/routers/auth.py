@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Query
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.deps import CurrentUser
-from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse, UserResponse
+from app.schemas.auth import GitHubCallbackRequest, LoginRequest, SignupRequest, TokenResponse, UserResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -49,3 +52,20 @@ def verify_email(token: str = Query(..., description="Email verification token")
 def get_me(current_user: CurrentUser) -> UserResponse:
     """Get the current authenticated user."""
     return UserResponse(**current_user)
+
+
+@router.get("/github")
+def github_authorize() -> RedirectResponse:
+    """Redirect to GitHub OAuth consent screen."""
+    params = urlencode({
+        "client_id": settings.GITHUB_CLIENT_ID,
+        "redirect_uri": f"{settings.CLIENT_URL}/auth/github/callback",
+        "scope": "read:user user:email",
+    })
+    return RedirectResponse(url=f"https://github.com/login/oauth/authorize?{params}")
+
+
+@router.post("/github/callback")
+def github_callback(body: GitHubCallbackRequest) -> dict:
+    """Exchange GitHub OAuth code for a Kodwai access token."""
+    return auth_service.github_login(code=body.code)

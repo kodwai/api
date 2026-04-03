@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import connect, disconnect, run_migrations
-from app.routers import api_keys, auth, badges, challenges, developer_profiles, feedback, leaderboard, organizations, projects, proxy, scores, sessions, submissions
+from app.routers import api_keys, auth, badges, challenges, developer_profiles, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, submissions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,6 +66,7 @@ app.include_router(leaderboard.router, prefix="/api")
 app.include_router(developer_profiles.router, prefix="/api")
 app.include_router(badges.router, prefix="/api")
 app.include_router(feedback.router, prefix="/api")
+app.include_router(share.router, prefix="/api")
 
 # Admin routers
 from app.routers.admin import auth as admin_auth, dashboard as admin_dashboard, users as admin_users, challenges as admin_challenges

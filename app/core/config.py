@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     # Scoring
     SCORING_MODEL: str = "claude-sonnet-4-6"
 
+    # GitHub OAuth
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

@@ -53,13 +53,20 @@ def disconnect() -> None:
 
 
 def _split_sql(sql: str) -> list[str]:
-    """Split SQL on semicolons that are outside of string literals."""
+    """Split SQL on semicolons that are outside of string literals and comments."""
     statements: list[str] = []
     current: list[str] = []
     in_string = False
     i = 0
     while i < len(sql):
         ch = sql[i]
+        # Skip -- line comments (only outside string literals)
+        if ch == "-" and not in_string and i + 1 < len(sql) and sql[i + 1] == "-":
+            # Consume until end of line
+            while i < len(sql) and sql[i] != "\n":
+                current.append(sql[i])
+                i += 1
+            continue
         if ch == "'" and not in_string:
             in_string = True
             current.append(ch)

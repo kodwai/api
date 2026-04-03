@@ -10,8 +10,8 @@ INSERT OR IGNORE INTO challenges (id, created_by, title, slug, description, prob
 VALUES
 -- ============================================================
 -- Challenge 023: Hard / Algorithms - SQL Query Engine
--- Why AI can't one-shot: 5-phase pipeline (lexer→parser→planner→optimizer→executor)
--- where each phase's edge cases cascade into the next. AI typically gets the
+-- Why AI cannot one-shot: 5-phase pipeline (lexer→parser→planner→optimizer→executor)
+-- where each phase''s edge cases cascade into the next. AI typically gets the
 -- lexer/parser right but breaks on JOIN optimization and correlated subqueries.
 -- ============================================================
 (
@@ -146,7 +146,7 @@ EXPLAIN SELECT * FROM large_table WHERE indexed_col = 42;
 ),
 -- ============================================================
 -- Challenge 024: Hard / Fullstack - Collaborative Text Editor with CRDTs
--- Why AI can't one-shot: CRDT merge semantics have subtle invariants that
+-- Why AI cannot one-shot: CRDT merge semantics have subtle invariants that
 -- break under concurrent edits. Cursor tracking, undo-per-user, and
 -- offline reconciliation each add a layer of interacting complexity.
 -- ============================================================
@@ -247,7 +247,7 @@ Properties that MUST hold:
 ),
 -- ============================================================
 -- Challenge 025: Hard / System Design - Git Implementation
--- Why AI can't one-shot: Content-addressable storage, tree serialization,
+-- Why AI cannot one-shot: Content-addressable storage, tree serialization,
 -- three-way merge with conflict markers, and packfile format each have
 -- non-obvious invariants. The merge algorithm alone requires understanding
 -- LCA in the commit DAG.
@@ -407,7 +407,7 @@ cat shared.txt            # Should have conflict markers
 ),
 -- ============================================================
 -- Challenge 026: Hard / Algorithms - Compiler for a Mini Language
--- Why AI can't one-shot: Type inference across closures, register
+-- Why AI cannot one-shot: Type inference across closures, register
 -- allocation, and optimization passes require iterative debugging.
 -- A subtle type-checker bug surfaces only in higher-order functions.
 -- ============================================================
@@ -598,7 +598,7 @@ Provide at least 40 test cases organized by phase:
 ),
 -- ============================================================
 -- Challenge 027: Hard / System Design - Distributed Task Scheduler
--- Why AI can't one-shot: DAG dependency resolution, distributed locking,
+-- Why AI cannot one-shot: DAG dependency resolution, distributed locking,
 -- failure recovery with exactly-once semantics, and cron parsing all
 -- interact in ways that produce bugs only under concurrent load.
 -- ============================================================
@@ -747,7 +747,7 @@ GET    /workers                  # Worker pool status
 ),
 -- ============================================================
 -- Challenge 028: Hard / Data - Full-Text Search Engine
--- Why AI can't one-shot: Inverted index construction, BM25 ranking,
+-- Why AI cannot one-shot: Inverted index construction, BM25 ranking,
 -- fuzzy matching (Levenshtein automata), faceted aggregation, and
 -- real-time index updates are each non-trivial. Together they require
 -- careful data structure choices that cascade through the entire system.
@@ -935,7 +935,7 @@ GET    /stats                  # Index stats (doc count, term count, memory usag
 ),
 -- ============================================================
 -- Challenge 029: Hard / Frontend - Browser Layout Engine
--- Why AI can't one-shot: CSS cascade resolution, box model calculation,
+-- Why AI cannot one-shot: CSS cascade resolution, box model calculation,
 -- flexbox layout, and paint ordering form a 4-phase pipeline where
 -- each phase has hundreds of edge cases (margin collapsing, flex
 -- wrapping, z-index stacking contexts) that compound.
@@ -1124,7 +1124,7 @@ For each test page, provide an expected output image. Your engine''s output shou
 ),
 -- ============================================================
 -- Challenge 030: Hard / System Design - API Gateway with Plugin System
--- Why AI can't one-shot: The plugin lifecycle (load, init, per-request hooks,
+-- Why AI cannot one-shot: The plugin lifecycle (load, init, per-request hooks,
 -- hot-reload) interacts with the request pipeline, circuit breakers,
 -- and config management in ways that produce race conditions and subtle
 -- ordering bugs that only surface under concurrent requests.
@@ -1363,8 +1363,8 @@ POST   /admin/cache/purge       # Purge cache (all or by pattern)
 ),
 -- ============================================================
 -- Challenge 031: Hard / Backend - Reactive Database with Query Subscriptions
--- Why AI can't one-shot: Live query invalidation requires tracking which
--- rows satisfy each subscription's WHERE clause. Combine this with
+-- Why AI cannot one-shot: Live query invalidation requires tracking which
+-- rows satisfy each subscription''s WHERE clause. Combine this with
 -- transactions, conflict resolution, and efficient incremental updates
 -- and you get a system where bugs only appear under specific mutation
 -- + subscription interaction patterns.
@@ -1557,7 +1557,7 @@ WebSocket protocol:
 ),
 -- ============================================================
 -- Challenge 032: Hard / Fullstack - Visual Workflow Builder
--- Why AI can't one-shot: Combines a drag-and-drop canvas (hit testing,
+-- Why AI cannot one-shot: Combines a drag-and-drop canvas (hit testing,
 -- connection routing, zoom/pan), a DAG execution engine, a node type
 -- registry with runtime type checking on edges, and undo/redo with
 -- structural changes — all interacting simultaneously.

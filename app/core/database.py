@@ -122,8 +122,16 @@ def run_migrations() -> None:
             lines = [line for line in statement.strip().splitlines() if line.strip() and not line.strip().startswith("--")]
             cleaned = "\n".join(lines).strip()
             if cleaned:
-                conn.execute(cleaned)
-        conn.execute("INSERT INTO _migrations (name) VALUES (?)", (migration_file.name,))
+                try:
+                    conn.execute(cleaned)
+                except (ValueError, Exception) as e:
+                    err_msg = str(e).lower()
+                    # Skip "duplicate column" or "already exists" errors for idempotency
+                    if "duplicate column" in err_msg or "already exists" in err_msg or "cannot add" in err_msg:
+                        logger.warning("Skipping statement in %s (already applied): %s", migration_file.name, err_msg[:100])
+                        continue
+                    raise
+        conn.execute("INSERT OR IGNORE INTO _migrations (name) VALUES (?)", (migration_file.name,))
         conn.commit()
         logger.info("Applied migration: %s", migration_file.name)
 

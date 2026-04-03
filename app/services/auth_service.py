@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.core.database import execute, fetch_one
 from app.core.security import create_access_token, hash_password, verify_password
 from app.services.email_service import send_verification_email
+
+logger = logging.getLogger(__name__)
 
 
 def signup(
@@ -143,3 +148,126 @@ def verify_email(token: str) -> dict[str, Any]:
         (user["id"],),
     )
     return updated_user  # type: ignore[return-value]
+
+
+def github_login(code: str) -> dict[str, Any]:
+    """Exchange a GitHub OAuth code for a Kodwai access token.
+
+    If the GitHub user already exists (by github_id), log them in.
+    If the email matches an existing account, link the GitHub ID.
+    Otherwise, create a new developer account.
+    """
+    # Exchange code for GitHub access token
+    token_resp = httpx.post(
+        "https://github.com/login/oauth/access_token",
+        json={
+            "client_id": settings.GITHUB_CLIENT_ID,
+            "client_secret": settings.GITHUB_CLIENT_SECRET,
+            "code": code,
+        },
+        headers={"Accept": "application/json"},
+        timeout=10,
+    )
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GitHub OAuth failed")
+
+    token_data = token_resp.json()
+    gh_access_token = token_data.get("access_token")
+    if not gh_access_token:
+        error = token_data.get("error_description", "Failed to get access token from GitHub")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+
+    # Fetch GitHub user profile
+    gh_headers = {"Authorization": f"Bearer {gh_access_token}", "Accept": "application/json"}
+    user_resp = httpx.get("https://api.github.com/user", headers=gh_headers, timeout=10)
+    if user_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to fetch GitHub profile")
+
+    gh_user = user_resp.json()
+    gh_id = str(gh_user["id"])
+    gh_username = gh_user.get("login", "")
+    gh_name = gh_user.get("name") or gh_username
+    gh_avatar = gh_user.get("avatar_url")
+    gh_email = gh_user.get("email")
+
+    # If GitHub doesn't expose email publicly, fetch from emails API
+    if not gh_email:
+        emails_resp = httpx.get("https://api.github.com/user/emails", headers=gh_headers, timeout=10)
+        if emails_resp.status_code == 200:
+            for em in emails_resp.json():
+                if em.get("primary") and em.get("verified"):
+                    gh_email = em["email"]
+                    break
+
+    if not gh_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No verified email found on your GitHub account. Please add a verified email to GitHub and try again.",
+        )
+
+    # Check if user exists by github_id
+    existing = fetch_one(
+        "SELECT id, email, name, role, organization_id, user_type, username, email_verified, is_banned, banned_reason, created_at FROM users WHERE github_id = ?",
+        (gh_id,),
+    )
+
+    if existing:
+        if existing.get("is_banned"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Account banned: {existing.get('banned_reason', 'Account suspended')}")
+        # Update avatar on each login
+        execute("UPDATE users SET avatar_url = ? WHERE id = ?", (gh_avatar, existing["id"]))
+        access_token = create_access_token({"sub": existing["id"]})
+        user_response = {k: v for k, v in existing.items() if k not in ("password_hash", "is_banned", "banned_reason")}
+        return {"access_token": access_token, "user": user_response}
+
+    # Check if email matches existing account — link GitHub
+    existing_by_email = fetch_one(
+        "SELECT id, email, name, role, organization_id, user_type, username, email_verified, is_banned, banned_reason, created_at FROM users WHERE email = ?",
+        (gh_email,),
+    )
+
+    if existing_by_email:
+        if existing_by_email.get("is_banned"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Account banned: {existing_by_email.get('banned_reason', 'Account suspended')}")
+        # Link GitHub to existing account
+        execute(
+            "UPDATE users SET github_id = ?, avatar_url = ?, email_verified = 1 WHERE id = ?",
+            (gh_id, gh_avatar, existing_by_email["id"]),
+        )
+        access_token = create_access_token({"sub": existing_by_email["id"]})
+        user_response = {k: v for k, v in existing_by_email.items() if k not in ("password_hash", "is_banned", "banned_reason")}
+        user_response["email_verified"] = 1
+        return {"access_token": access_token, "user": user_response}
+
+    # New user — create developer account
+    user_id = secrets.token_hex(16)
+
+    # Ensure username is unique
+    base_username = gh_username.lower().replace(" ", "-")
+    username = base_username
+    suffix = 1
+    while fetch_one("SELECT id FROM users WHERE username = ?", (username,)):
+        username = f"{base_username}-{suffix}"
+        suffix += 1
+
+    execute(
+        """INSERT INTO users (id, email, password_hash, name, username, role, organization_id, user_type, github_id, avatar_url, email_verified)
+           VALUES (?, ?, '', ?, ?, 'admin', NULL, 'developer', ?, ?, 1)""",
+        (user_id, gh_email, gh_name, username, gh_id, gh_avatar),
+    )
+
+    # Create developer profile
+    profile_id = secrets.token_hex(16)
+    execute(
+        "INSERT INTO developer_profiles (id, user_id, github_url) VALUES (?, ?, ?)",
+        (profile_id, user_id, f"https://github.com/{gh_username}"),
+    )
+
+    logger.info("New GitHub OAuth user created: %s (%s)", username, gh_email)
+
+    user = fetch_one(
+        "SELECT id, email, name, role, organization_id, user_type, username, email_verified, created_at FROM users WHERE id = ?",
+        (user_id,),
+    )
+    access_token = create_access_token({"sub": user_id})
+    return {"access_token": access_token, "user": user}

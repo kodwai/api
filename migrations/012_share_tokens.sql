@@ -1,5 +1,5 @@
 -- Migration 012: Add share_token to submissions for public sharing
 
-ALTER TABLE submissions ADD COLUMN share_token TEXT UNIQUE;
+ALTER TABLE submissions ADD COLUMN share_token TEXT;
 
-CREATE INDEX IF NOT EXISTS idx_submissions_share_token ON submissions(share_token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_share_token ON submissions(share_token);

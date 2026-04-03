@@ -157,6 +157,16 @@ def github_login(code: str) -> dict[str, Any]:
     If the email matches an existing account, link the GitHub ID.
     Otherwise, create a new developer account.
     """
+    try:
+        return _github_login_inner(code)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("GitHub OAuth error: %s", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"GitHub OAuth error: {e}")
+
+
+def _github_login_inner(code: str) -> dict[str, Any]:
     # Exchange code for GitHub access token
     token_resp = httpx.post(
         "https://github.com/login/oauth/access_token",

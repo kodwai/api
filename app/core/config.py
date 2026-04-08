@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # URLs
     APP_URL: str = "http://localhost:8000"
     CLIENT_URL: str = "http://localhost:3000"
+    LANDING_URL: str = "https://kodwai.com"
+
+    # Vercel Blob
+    BLOB_READ_WRITE_TOKEN: str = ""
+
+    # Google Indexing
+    GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
 
     @property
     def cors_origins_list(self) -> list[str]:

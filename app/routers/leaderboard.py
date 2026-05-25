@@ -24,8 +24,10 @@ def global_leaderboard(
     """
     offset = (page - 1) * limit
 
-    # Build the score subquery based on filters (uses alias "sub" for submissions)
-    sub_conditions = ["sub.status = 'scored'", "sub.score IS NOT NULL"]
+    # Build the score subquery based on filters (uses alias "sub" for submissions).
+    # leaderboard_eligible = 1 excludes submissions rated without the AI/analytical
+    # phase (i.e. the developer had no Claude API key).
+    sub_conditions = ["sub.status = 'scored'", "sub.score IS NOT NULL", "sub.leaderboard_eligible = 1"]
     sub_params: list = []
 
     if agent:
@@ -94,7 +96,7 @@ def leaderboard_categories() -> list[dict]:
         """SELECT c.category, COUNT(DISTINCT s.user_id) as developer_count, COUNT(DISTINCT s.challenge_id) as challenge_count
            FROM submissions s
            JOIN challenges c ON s.challenge_id = c.id
-           WHERE s.status = 'scored'
+           WHERE s.status = 'scored' AND s.leaderboard_eligible = 1
            GROUP BY c.category
            ORDER BY developer_count DESC""",
     )

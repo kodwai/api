@@ -23,8 +23,9 @@ def admin_leaderboard(
     offset = (page - 1) * limit
 
     if agent or category:
-        # Filtered: compute scores from matching submissions only
-        sub_conditions = ["sub.status = 'scored'", "sub.score IS NOT NULL"]
+        # Filtered: compute scores from matching submissions only.
+        # leaderboard_eligible = 1 excludes submissions rated without the AI phase.
+        sub_conditions = ["sub.status = 'scored'", "sub.score IS NOT NULL", "sub.leaderboard_eligible = 1"]
         sub_params: list = []
         if agent:
             sub_conditions.append("sub.agent_used = ?")
@@ -96,11 +97,14 @@ def admin_leaderboard(
 
 @router.post("/leaderboard/recalculate")
 def recalculate_ranks(current_admin: AdminUser) -> dict:
+    # Reuse the scoring engine's ranking rule: only developers with a leaderboard-
+    # eligible (AI-scored) submission are ranked; everyone else has rank cleared.
+    from app.services.challenge_scoring import _recompute_ranks
+
+    _recompute_ranks()
     profiles = fetch_all(
-        "SELECT user_id, total_score FROM developer_profiles WHERE challenges_completed > 0 ORDER BY total_score DESC",
+        "SELECT user_id FROM developer_profiles WHERE rank IS NOT NULL",
     )
-    for i, p in enumerate(profiles):
-        execute("UPDATE developer_profiles SET rank = ? WHERE user_id = ?", (i + 1, p["user_id"]))
 
     audit_id = secrets.token_hex(16)
     execute(

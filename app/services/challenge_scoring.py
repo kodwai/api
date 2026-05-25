@@ -84,6 +84,12 @@ def _run_scoring(submission_id: str) -> None:
         overall = round(obj["total"], 1)
         analytical_skipped = True
 
+    # Leaderboard eligibility: a submission only counts toward leaderboards when the
+    # AI/analytical phase contributed. That phase runs only when the developer added
+    # their own Claude API key; without it the score is objective-only (non-AI) and
+    # not comparable to AI-scored submissions, so it is hidden from every leaderboard.
+    leaderboard_eligible = 0 if analytical_skipped else 1
+
     overall = min(overall, 100.0)
 
     # Apply late penalty
@@ -94,6 +100,7 @@ def _run_scoring(submission_id: str) -> None:
         "objective": obj,
         "analytical": analytical,
         "analytical_skipped": analytical_skipped,
+        "leaderboard_eligible": bool(leaderboard_eligible),
         "is_late": is_late,
         "late_penalty": late_penalty if is_late else 0,
         "overall": overall,
@@ -105,10 +112,11 @@ def _run_scoring(submission_id: str) -> None:
               status = 'scored',
               score = ?,
               score_breakdown = ?,
+              leaderboard_eligible = ?,
               scored_at = datetime('now'),
               updated_at = datetime('now')
            WHERE id = ?""",
-        (overall, json.dumps(breakdown), submission_id),
+        (overall, json.dumps(breakdown), leaderboard_eligible, submission_id),
     )
 
     # Update challenge stats
@@ -146,7 +154,7 @@ def _run_scoring(submission_id: str) -> None:
                          MAX(s.score) * CASE c.difficulty WHEN 'easy' THEN 1.0 WHEN 'medium' THEN 1.5 WHEN 'hard' THEN 2.0 ELSE 1.0 END as weighted_score
                   FROM submissions s
                   JOIN challenges c ON s.challenge_id = c.id
-                  WHERE s.user_id = ? AND s.status = 'scored'
+                  WHERE s.user_id = ? AND s.status = 'scored' AND s.leaderboard_eligible = 1
                   GROUP BY s.challenge_id
                 ) best), 0),
               preferred_agent = ?,
@@ -159,30 +167,34 @@ def _run_scoring(submission_id: str) -> None:
     # Recompute global ranks for all developers
     _recompute_ranks()
 
-    # Update leaderboard — keep best score per user per challenge
+    # Update leaderboard — keep best score per user per challenge.
+    # Only eligible submissions (AI-scored) ever reach a leaderboard; an ineligible
+    # submission never creates or overwrites an entry, so any existing eligible entry
+    # for this challenge is preserved.
     user_id = submission["user_id"]
     challenge_id = submission["challenge_id"]
-    existing_entry = fetch_one(
-        "SELECT id, score FROM leaderboard_entries WHERE user_id = ? AND challenge_id = ?",
-        (user_id, challenge_id),
-    )
-    if existing_entry is None:
-        entry_id = secrets.token_hex(16)
-        execute(
-            """INSERT INTO leaderboard_entries (id, user_id, challenge_id, submission_id, score, agent_used, time_taken_ms, submitted_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (entry_id, user_id, challenge_id, submission_id, overall,
-             submission.get("agent_used"), submission.get("time_taken_ms")),
+    if leaderboard_eligible:
+        existing_entry = fetch_one(
+            "SELECT id, score FROM leaderboard_entries WHERE user_id = ? AND challenge_id = ?",
+            (user_id, challenge_id),
         )
-    elif overall > existing_entry["score"]:
-        execute(
-            """UPDATE leaderboard_entries SET
-                  submission_id = ?, score = ?, agent_used = ?, time_taken_ms = ?,
-                  submitted_at = datetime('now')
-               WHERE id = ?""",
-            (submission_id, overall, submission.get("agent_used"),
-             submission.get("time_taken_ms"), existing_entry["id"]),
-        )
+        if existing_entry is None:
+            entry_id = secrets.token_hex(16)
+            execute(
+                """INSERT INTO leaderboard_entries (id, user_id, challenge_id, submission_id, score, agent_used, time_taken_ms, submitted_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (entry_id, user_id, challenge_id, submission_id, overall,
+                 submission.get("agent_used"), submission.get("time_taken_ms")),
+            )
+        elif overall > existing_entry["score"]:
+            execute(
+                """UPDATE leaderboard_entries SET
+                      submission_id = ?, score = ?, agent_used = ?, time_taken_ms = ?,
+                      submitted_at = datetime('now')
+                   WHERE id = ?""",
+                (submission_id, overall, submission.get("agent_used"),
+                 submission.get("time_taken_ms"), existing_entry["id"]),
+            )
 
     # Evaluate badges
     try:
@@ -612,9 +624,26 @@ def _is_code_file(path: str) -> bool:
 
 
 def _recompute_ranks() -> None:
-    """Recompute global rank for all developers based on total_score."""
+    """Recompute global rank based on total_score.
+
+    Only developers with at least one leaderboard-eligible (AI-scored) submission are
+    ranked; everyone else has their rank cleared so it never surfaces on a leaderboard
+    or share card.
+    """
+    execute(
+        """UPDATE developer_profiles SET rank = NULL
+           WHERE user_id NOT IN (
+               SELECT DISTINCT user_id FROM submissions
+               WHERE status = 'scored' AND leaderboard_eligible = 1
+           )""",
+    )
     profiles = fetch_all(
-        "SELECT user_id, total_score FROM developer_profiles WHERE challenges_completed > 0 ORDER BY total_score DESC",
+        """SELECT user_id FROM developer_profiles
+           WHERE user_id IN (
+               SELECT DISTINCT user_id FROM submissions
+               WHERE status = 'scored' AND leaderboard_eligible = 1
+           )
+           ORDER BY total_score DESC""",
     )
     for i, p in enumerate(profiles):
         execute(

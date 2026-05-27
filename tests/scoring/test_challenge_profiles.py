@@ -61,6 +61,13 @@ def test_all_configured_challenges_have_correct_profile_and_traps():
         assert configured == 12, f"Expected 12 configured, got {configured}"
 
 
+@pytest.mark.skip(
+    reason=(
+        "Migration 020 deleted 'debug-auth-flow' (legacy junk challenge). "
+        "The debugging profile still exists in config; use bookshelf-rest-api "
+        "with spec_heavy to exercise the axis machinery instead."
+    )
+)
 def test_debugging_profile_yields_direction_points_60():
     """The debugging profile must give direction=60 points, proving profile axes are applied."""
     row = fetch_one(
@@ -81,11 +88,14 @@ def test_debugging_profile_yields_direction_points_60():
 
 
 def test_spec_heavy_profile_direction_points_60():
-    """The spec_heavy profile must give direction=60 points."""
+    """The spec_heavy profile must give direction=60 points.
+
+    Uses bookshelf-rest-api (present in the curated 15) instead of the deleted build-rest-api.
+    """
     row = fetch_one(
-        "SELECT scoring_config FROM challenges WHERE slug = 'build-rest-api'"
+        "SELECT scoring_config FROM challenges WHERE slug = 'bookshelf-rest-api'"
     )
-    assert row is not None, "build-rest-api must be seeded in the test DB"
+    assert row is not None, "bookshelf-rest-api must be seeded in the test DB"
 
     rubric = build_rubric(row["scoring_config"])
 
@@ -97,6 +107,13 @@ def test_spec_heavy_profile_direction_points_60():
     assert rubric["profile"] == "spec_heavy"
 
 
+@pytest.mark.skip(
+    reason=(
+        "Migration 020 deleted 'mini-git' (legacy junk challenge). "
+        "The architecture profile still exists in config but no curated "
+        "challenge uses it; covered by unit tests in test_config.py."
+    )
+)
 def test_architecture_profile_direction_points_45():
     """The architecture profile must give direction=45 points (outcome-weighted)."""
     row = fetch_one(
@@ -114,6 +131,13 @@ def test_architecture_profile_direction_points_45():
     assert rubric["profile"] == "architecture"
 
 
+@pytest.mark.skip(
+    reason=(
+        "Migration 020 deleted 'lru-cache-ttl' (legacy junk challenge). "
+        "The balanced profile still exists in config but no curated "
+        "challenge uses it; covered by unit tests in test_config.py."
+    )
+)
 def test_balanced_profile_direction_points_50():
     """The balanced profile must give direction=50 points."""
     row = fetch_one(

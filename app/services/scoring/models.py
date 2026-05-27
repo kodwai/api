@@ -57,8 +57,9 @@ class ScoringContext:
     code_snapshot: list[dict]
     git_log: list[dict]
     agent_trace: Optional[dict]
-    llm: Optional[Any] = None         # LLMJudge instance, or None when no API key
-    judgment: Optional[dict] = None   # cached result of llm.judge(self)
+    llm: Optional[Any] = None          # LLMJudge instance, or None when no API key
+    judgment: Optional[dict] = None    # cached result of llm.judge(self)
+    rubric_judgment: Optional[dict] = None  # cached result of llm.judge_rubric(self, rubric)
 
     @property
     def turns(self) -> list[dict]:

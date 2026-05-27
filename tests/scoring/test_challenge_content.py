@@ -115,6 +115,23 @@ class TestMigration017StarterFiles:
 
 
 # ── Migration 018 ─────────────────────────────────────────────────────────────
+# NOTE: Migration 019 (quality_rubric_challenges) supersedes migration 018's
+# keep-12 curation. The public core is now exactly the 9 bespoke-rubric
+# challenges. Tests below are updated to reflect the current truth.
+
+# The 9 new public slugs installed by migration 019.
+CORE_9_RUBRIC = [
+    "searchable-product-listing-ui",
+    "offline-first-notes-app",
+    "bookshelf-rest-api",
+    "idempotent-etl-pipeline-with-schema-drift",
+    "multi-tenant-feature-flag-service",
+    "secrets-vault-with-envelope-encryption",
+    "production-rag-service-with-eval-harness-cost-guardrails",
+    "multi-currency-wallet-ledger-with-idempotent-transfers",
+    "zero-downtime-schema-migration-progressive-rollout",
+]
+
 
 class TestMigration018CurateCore:
     def _get_public_slugs(self) -> list[str]:
@@ -125,7 +142,18 @@ class TestMigration018CurateCore:
         return [r[0] for r in rows]
 
     def test_all_core_12_are_public(self):
+        """Migration 019 replaced the core-12 with 9 bespoke-rubric challenges.
+
+        The original CORE_12 slugs are now drafted (is_public=0).  We verify
+        that the 9 new public challenges are present instead.
+        """
         public = set(self._get_public_slugs())
+        # All 9 rubric challenges must be public.
+        for slug in CORE_9_RUBRIC:
+            assert slug in public, (
+                f"Quality challenge '{slug}' should be public after migration 019"
+            )
+        # The old core-12 slugs should now be drafted.
         conn = get_connection()
         seeded = {
             r[0]
@@ -133,8 +161,8 @@ class TestMigration018CurateCore:
         }
         for slug in CORE_12:
             if slug in seeded:
-                assert slug in public, (
-                    f"Core challenge '{slug}' should be public (is_public=1)"
+                assert slug not in public, (
+                    f"Old core challenge '{slug}' should be drafted after migration 019 supersedes 018"
                 )
 
     def test_non_core_challenges_are_not_public(self):
@@ -145,9 +173,10 @@ class TestMigration018CurateCore:
             )
 
     def test_exactly_12_or_fewer_public_challenges(self):
+        """After migration 019 there are exactly 9 public challenges."""
         public = self._get_public_slugs()
-        assert len(public) <= 12, (
-            f"Expected at most 12 public challenges, found {len(public)}: {public}"
+        assert len(public) == 9, (
+            f"Expected exactly 9 public challenges after migration 019, found {len(public)}: {public}"
         )
 
     def test_at_least_one_non_core_is_drafted(self):

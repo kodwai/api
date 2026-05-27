@@ -29,6 +29,8 @@ class ScoreBreakdown:
     late_penalty: float = 0.0
     leaderboard_eligible: bool = False
     baseline_lift: Optional[dict] = None
+    trace_quality: Optional[str] = None   # raw trace_quality string from agent_trace
+    confidence: str = "high"              # "high"/"medium"/"low"/"none" — transparency only, does not affect score
 
     def to_json(self) -> dict:
         return {
@@ -37,6 +39,8 @@ class ScoreBreakdown:
             "late_penalty": self.late_penalty,
             "leaderboard_eligible": self.leaderboard_eligible,
             "baseline_lift": self.baseline_lift,
+            "trace_quality": self.trace_quality,
+            "confidence": self.confidence,
             "axes": [
                 {"name": a.name, "points": a.points, "score": a.score, "signals": a.signals}
                 for a in self.axes

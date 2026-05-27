@@ -66,6 +66,35 @@ def _load_context(submission: dict, challenge: dict) -> ScoringContext:
     return ctx
 
 
+def _trace_confidence(ctx: ScoringContext) -> str:
+    """Return a transparency-only confidence label for the Direction axis.
+
+    "none"   – no trace at all (agent_trace is None or has no turns).
+    "high"   – trace_quality="full" or >=6 user turns when quality is absent.
+    "medium" – trace_quality="good" or >=3 user turns when quality is absent.
+    "low"    – trace_quality="partial"/"minimal" or <3 user turns.
+
+    This label is informational only; it does NOT alter any score.
+    """
+    if not ctx.agent_trace:
+        return "none"
+    turns = ctx.agent_trace.get("turns") or []
+    if not turns:
+        return "none"
+
+    quality = ctx.agent_trace.get("trace_quality")
+    if quality is not None:
+        return {"full": "high", "good": "medium", "partial": "low", "minimal": "low"}.get(quality, "low")
+
+    # Derive from meaningful user-turn count when trace_quality is missing.
+    user_turns = sum(1 for t in turns if t.get("role") == "user")
+    if user_turns >= 6:
+        return "high"
+    if user_turns >= 3:
+        return "medium"
+    return "low"
+
+
 def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
     axes: list[AxisResult] = []
     overall = 0.0
@@ -105,8 +134,11 @@ def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
         baseline_lift = {"beat": artifact > float(baseline), "delta": delta}
 
     overall = min(round(overall, 1), 100.0)
-    return ScoreBreakdown(SCORING_VERSION, overall, axes,
-                          leaderboard_eligible=leaderboard_eligible, baseline_lift=baseline_lift)
+    breakdown = ScoreBreakdown(SCORING_VERSION, overall, axes,
+                               leaderboard_eligible=leaderboard_eligible, baseline_lift=baseline_lift)
+    breakdown.trace_quality = (ctx.agent_trace or {}).get("trace_quality")
+    breakdown.confidence = _trace_confidence(ctx)
+    return breakdown
 
 
 def _late_penalty(submission: dict, challenge: dict) -> float:

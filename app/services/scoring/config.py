@@ -72,6 +72,51 @@ DEFAULT_PROFILES: dict[str, dict] = {
 }
 
 
+# Human-readable metadata for each signal, surfaced in the pre-challenge rubric.
+SIGNAL_META: dict[str, dict] = {
+    "spec_precision":     {"axis": "direction", "label": "Spec Precision",     "description": "Stating clear requirements and constraints before writing code."},
+    "verification_rigor": {"axis": "direction", "label": "Verification Rigor",  "description": "Checking the AI's output, catching mistakes, pushing back."},
+    "decomposition":      {"axis": "direction", "label": "Decomposition",       "description": "Breaking the problem into ordered steps instead of one mega-prompt."},
+    "recovery":           {"axis": "direction", "label": "Recovery",            "description": "Redirecting effectively when the AI goes down the wrong path."},
+    "intent_fidelity":    {"axis": "direction", "label": "Intent Fidelity",     "description": "The final solution matches what you actually asked for."},
+    "one_shot_penalty":   {"axis": "direction", "label": "Engagement",          "description": "Staying engaged and iterating, vs paste-the-spec-and-walk-away."},
+    "tests":              {"axis": "outcome",   "label": "Tests",               "description": "Share of the challenge's tests your solution passes."},
+    "code_quality":       {"axis": "outcome",   "label": "Code Quality",        "description": "Clean, readable code without obvious smells."},
+    "complexity":         {"axis": "outcome",   "label": "Complexity",          "description": "Reasonable structure and nesting."},
+    "trap_coverage":      {"axis": "lift",      "label": "Edge-Case Coverage",  "description": "Handling subtle requirements a careless one-shot would miss."},
+    "baseline_lift":      {"axis": "lift",      "label": "Lift over AI",         "description": "How far you out-perform a solo AI on this challenge."},
+}
+
+AXIS_META: dict[str, dict] = {
+    "direction": {"label": "Direction", "blurb": "How well you direct the AI — the skill we care about most."},
+    "outcome":   {"label": "Outcome",   "blurb": "Quality of the final artifact."},
+    "lift":      {"label": "Lift",      "blurb": "Going beyond what a solo AI would produce."},
+}
+
+
+def build_rubric(raw_scoring_config) -> dict:
+    """Resolve a challenge's scoring_config into a display-ready rubric."""
+    cfg = resolve_config(raw_scoring_config)
+    axes = []
+    for axis_name, axis_cfg in cfg.axes.items():
+        meta = AXIS_META.get(axis_name, {"label": axis_name.title(), "blurb": ""})
+        signals = [
+            {
+                "name": sig,
+                "label": SIGNAL_META.get(sig, {}).get("label", sig),
+                "description": SIGNAL_META.get(sig, {}).get("description", ""),
+                "weight": weight,
+            }
+            for sig, weight in axis_cfg.signals.items()
+            if weight > 0  # hide zero-weight signals (e.g. baseline_lift in v1)
+        ]
+        axes.append({
+            "name": axis_name, "label": meta["label"], "blurb": meta["blurb"],
+            "points": axis_cfg.points, "signals": signals,
+        })
+    return {"profile": cfg.profile, "axes": axes}
+
+
 def resolve_config(raw: Optional[str | dict]) -> ScoringConfig:
     """Resolve a challenge's stored scoring_config into a ScoringConfig.
 

@@ -21,6 +21,7 @@ class ScoringConfig(BaseModel):
     version: int = 1
     axes: dict[str, AxisConfig]
     traps: list[TrapConfig] = Field(default_factory=list)
+    rubric: list[dict] = Field(default_factory=list)  # per-challenge anchored dimensions [{name, weight, description}]
 
 
 # Default profiles. Axis points across a profile should sum to 100.
@@ -141,5 +142,6 @@ def resolve_config(raw: Optional[str | dict]) -> ScoringConfig:
         "version": data.get("version", 1),
         "axes": data.get("axes", base["axes"]),
         "traps": data.get("traps", []),
+        "rubric": data.get("rubric", []),
     }
     return ScoringConfig(**merged)

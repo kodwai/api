@@ -60,9 +60,13 @@ def _load_context(submission: dict, challenge: dict) -> ScoringContext:
             api_key = decrypt_api_key(key_row["encrypted_key"], key_row["key_iv"], settings.ENCRYPTION_KEY)
             ctx.llm = LLMJudge(api_key)
             ctx.judgment = ctx.llm.judge(ctx)
+            # If the challenge has a bespoke rubric, run the rubric judge as well.
+            if ctx.config.rubric:
+                ctx.rubric_judgment = ctx.llm.judge_rubric(ctx, ctx.config.rubric)
         except Exception:
             logger.exception("LLM judging failed for submission %s", submission["id"])
             ctx.judgment = None
+            ctx.rubric_judgment = None
     return ctx
 
 
@@ -98,30 +102,134 @@ def _trace_confidence(ctx: ScoringContext) -> str:
 def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
     axes: list[AxisResult] = []
     overall = 0.0
-    for axis_name, axis_cfg in ctx.config.axes.items():
-        weighted_sum = 0.0
-        weight_total = 0.0
-        signal_details: list[dict] = []
-        for sig_name, weight in axis_cfg.signals.items():
-            fn = get_signal(sig_name)
-            if fn is None or weight <= 0:
-                continue
-            res = fn(ctx)
-            if res.skipped:
-                signal_details.append({"name": sig_name, "value": None, "weight": weight,
-                                       "reason": res.reason, "evidence": res.evidence, "skipped": True})
-                continue  # dropped from normalization
-            weighted_sum += weight * res.value
-            weight_total += weight
-            signal_details.append({"name": sig_name, "value": res.value, "weight": weight,
-                                   "reason": res.reason, "evidence": res.evidence, "skipped": False})
-        axis_score = round(axis_cfg.points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
-        overall += axis_score
-        axes.append(AxisResult(axis_name, axis_cfg.points, axis_score, signal_details))
+
+    if ctx.config.rubric:
+        # ── Bespoke-rubric layout: direction 45 pts | challenge_rubric 45 pts | lift 10 pts ──
+        # Find the direction and lift axes from the profile config (any axis named "direction"
+        # or "lift"); everything else is replaced by the challenge_rubric axis.
+        direction_cfg = ctx.config.axes.get("direction")
+        lift_cfg = ctx.config.axes.get("lift")
+
+        # --- direction axis (rescaled to 45 pts) ---
+        if direction_cfg:
+            weighted_sum = 0.0
+            weight_total = 0.0
+            signal_details: list[dict] = []
+            for sig_name, weight in direction_cfg.signals.items():
+                fn = get_signal(sig_name)
+                if fn is None or weight <= 0:
+                    continue
+                res = fn(ctx)
+                if res.skipped:
+                    signal_details.append({"name": sig_name, "value": None, "weight": weight,
+                                           "reason": res.reason, "evidence": res.evidence, "skipped": True})
+                    continue
+                weighted_sum += weight * res.value
+                weight_total += weight
+                signal_details.append({"name": sig_name, "value": res.value, "weight": weight,
+                                       "reason": res.reason, "evidence": res.evidence, "skipped": False})
+            dir_points = 45.0
+            axis_score = round(dir_points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
+            overall += axis_score
+            axes.append(AxisResult("direction", dir_points, axis_score, signal_details))
+
+        # --- challenge_rubric axis (45 pts) ---
+        rubric_points = 45.0
+        judgment = ctx.rubric_judgment  # may be None or {}
+        if judgment:
+            # Compute weighted average of (score/10) across all dims, then × 45.
+            weighted_sum = 0.0
+            weight_total = 0.0
+            signal_details = []
+            for dim in ctx.config.rubric:
+                name = str(dim.get("name", "")).strip()
+                weight = float(dim.get("weight", 1) or 1)
+                if weight <= 0:
+                    continue
+                dim_result = judgment.get(name)
+                if dim_result is None:
+                    # dimension not scored by LLM — treat as skipped
+                    signal_details.append({"name": name, "value": None, "weight": weight,
+                                           "reason": "LLM did not return a score for this dimension.",
+                                           "evidence": [], "skipped": True})
+                    continue
+                dim_score_norm = dim_result["score"] / 10.0  # 0..1
+                weighted_sum += weight * dim_score_norm
+                weight_total += weight
+                signal_details.append({
+                    "name": name,
+                    "value": round(dim_score_norm, 4),
+                    "weight": weight,
+                    "reason": dim_result.get("justification", ""),
+                    "evidence": dim_result.get("evidence", []),
+                    "skipped": False,
+                })
+            rubric_score = round(rubric_points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
+        else:
+            # No LLM judgment available — axis is skipped
+            signal_details = [
+                {"name": str(dim.get("name", "")).strip(), "value": None,
+                 "weight": float(dim.get("weight", 1) or 1),
+                 "reason": "No LLM API key — rubric axis skipped.", "evidence": [], "skipped": True}
+                for dim in ctx.config.rubric
+            ]
+            rubric_score = 0.0
+        overall += rubric_score
+        axes.append(AxisResult("challenge_rubric", rubric_points, rubric_score, signal_details))
+
+        # --- lift axis (10 pts) ---
+        if lift_cfg:
+            weighted_sum = 0.0
+            weight_total = 0.0
+            signal_details = []
+            for sig_name, weight in lift_cfg.signals.items():
+                fn = get_signal(sig_name)
+                if fn is None or weight <= 0:
+                    continue
+                res = fn(ctx)
+                if res.skipped:
+                    signal_details.append({"name": sig_name, "value": None, "weight": weight,
+                                           "reason": res.reason, "evidence": res.evidence, "skipped": True})
+                    continue
+                weighted_sum += weight * res.value
+                weight_total += weight
+                signal_details.append({"name": sig_name, "value": res.value, "weight": weight,
+                                       "reason": res.reason, "evidence": res.evidence, "skipped": False})
+            lift_points = 10.0
+            axis_score = round(lift_points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
+            overall += axis_score
+            axes.append(AxisResult("lift", lift_points, axis_score, signal_details))
+
+    else:
+        # ── Standard layout: profile axes unchanged ──
+        for axis_name, axis_cfg in ctx.config.axes.items():
+            weighted_sum = 0.0
+            weight_total = 0.0
+            signal_details: list[dict] = []
+            for sig_name, weight in axis_cfg.signals.items():
+                fn = get_signal(sig_name)
+                if fn is None or weight <= 0:
+                    continue
+                res = fn(ctx)
+                if res.skipped:
+                    signal_details.append({"name": sig_name, "value": None, "weight": weight,
+                                           "reason": res.reason, "evidence": res.evidence, "skipped": True})
+                    continue  # dropped from normalization
+                weighted_sum += weight * res.value
+                weight_total += weight
+                signal_details.append({"name": sig_name, "value": res.value, "weight": weight,
+                                       "reason": res.reason, "evidence": res.evidence, "skipped": False})
+            axis_score = round(axis_cfg.points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
+            overall += axis_score
+            axes.append(AxisResult(axis_name, axis_cfg.points, axis_score, signal_details))
 
     # leaderboard_eligible is the canonical source of truth; supersedes the old
     # score_breakdown.$.analytical_skipped JSON flag written by migration 014.
-    leaderboard_eligible = ctx.judgment is not None and len(ctx.judgment) > 0
+    # Now also considers rubric judgment (if a rubric is present, rubric_judgment drives eligibility).
+    if ctx.config.rubric:
+        leaderboard_eligible = (ctx.rubric_judgment is not None and len(ctx.rubric_judgment) > 0)
+    else:
+        leaderboard_eligible = ctx.judgment is not None and len(ctx.judgment) > 0
 
     # Static baseline_lift badge (does not change the headline score in v1).
     # ai_baseline is on a 0-100 scale; normalize outcome axis score (raw points) to 0-100 before comparing.

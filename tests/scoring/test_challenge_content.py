@@ -4,6 +4,13 @@ Migration 017: debug-auth-flow and performance-bottleneck get runnable starter
 files and test suites; react-component-refactor gets starter files only.
 
 Migration 018: only the core 12 challenges are public; all others are drafted.
+
+Migration 020: curates the catalog to exactly 15 quality challenges and DELETES
+all legacy seed challenges including debug-auth-flow, performance-bottleneck,
+react-component-refactor, and the old non-core slugs. The TestMigration017*
+tests are skipped because those challenges no longer exist post-020. The
+TestMigration018CurateCore count assertions are updated to reflect 020's
+curated catalog of 15 all-public challenges.
 """
 from __future__ import annotations
 
@@ -28,11 +35,20 @@ CORE_12 = [
     "mini-git",
 ]
 
-# Known non-core slugs that are seeded in the test DB (verified present)
+# Known non-core slugs — all deleted by migration 020.
 NON_CORE_SLUGS = ["sql-query-engine", "theme-switcher", "api-gateway"]
 
 
 # ── Migration 017 ─────────────────────────────────────────────────────────────
+# NOTE: Migration 020 deletes debug-auth-flow, performance-bottleneck, and
+# react-component-refactor as part of the legacy-cleanup. These tests are
+# skipped with an explanatory reason rather than removed, to preserve the
+# history of what migration 017 originally verified.
+
+_020_DELETED = pytest.mark.skip(
+    reason="Migration 020 deleted this legacy challenge; it no longer exists in the catalog."
+)
+
 
 class TestMigration017StarterFiles:
     def _get(self, slug: str):
@@ -41,6 +57,7 @@ class TestMigration017StarterFiles:
             (slug,),
         )
 
+    @_020_DELETED
     def test_debug_auth_flow_has_starter_files(self):
         row = self._get("debug-auth-flow")
         assert row["starter_files"] is not None, "debug-auth-flow must have starter_files"
@@ -51,6 +68,7 @@ class TestMigration017StarterFiles:
         paths = [f["path"] for f in files]
         assert "auth.js" in paths, "starter_files must include auth.js"
 
+    @_020_DELETED
     def test_debug_auth_flow_has_test_suite_with_command(self):
         row = self._get("debug-auth-flow")
         assert row["test_suite"] is not None, "debug-auth-flow must have test_suite"
@@ -62,6 +80,7 @@ class TestMigration017StarterFiles:
         )
         assert "node" in entry["command"], "command must invoke node"
 
+    @_020_DELETED
     def test_performance_bottleneck_has_starter_files(self):
         row = self._get("performance-bottleneck")
         assert row["starter_files"] is not None, "performance-bottleneck must have starter_files"
@@ -72,6 +91,7 @@ class TestMigration017StarterFiles:
         paths = [f["path"] for f in files]
         assert "dashboard.js" in paths, "starter_files must include dashboard.js"
 
+    @_020_DELETED
     def test_performance_bottleneck_has_test_suite_with_command(self):
         row = self._get("performance-bottleneck")
         assert row["test_suite"] is not None, "performance-bottleneck must have test_suite"
@@ -83,6 +103,7 @@ class TestMigration017StarterFiles:
         )
         assert "node" in entry["command"], "command must invoke node"
 
+    @_020_DELETED
     def test_react_component_refactor_has_starter_files(self):
         row = self._get("react-component-refactor")
         assert row["starter_files"] is not None, (
@@ -93,6 +114,7 @@ class TestMigration017StarterFiles:
             "starter_files must be a JSON array with at least 1 file"
         )
 
+    @_020_DELETED
     def test_starter_files_content_is_non_empty(self):
         """Each starter file must have a non-empty 'content' field."""
         for slug in ("debug-auth-flow", "performance-bottleneck", "react-component-refactor"):
@@ -103,6 +125,7 @@ class TestMigration017StarterFiles:
                     f"{slug}: starter file '{f.get('path')}' has empty content"
                 )
 
+    @_020_DELETED
     def test_test_suite_content_is_non_empty(self):
         """Each test_suite entry must have a non-empty 'content' field."""
         for slug in ("debug-auth-flow", "performance-bottleneck"):
@@ -141,47 +164,43 @@ class TestMigration018CurateCore:
         ).fetchall()
         return [r[0] for r in rows]
 
-    def test_all_core_12_are_public(self):
-        """Migration 019 replaced the core-12 with 9 bespoke-rubric challenges.
+    def test_all_core_9_rubric_challenges_are_public(self):
+        """Migration 020 keeps all 15 curated challenges as is_public=1.
 
-        The original CORE_12 slugs are now drafted (is_public=0).  We verify
-        that the 9 new public challenges are present instead.
+        The 9 original quality rubric challenges from migration 019 must all
+        still be public in the curated catalog.
         """
         public = set(self._get_public_slugs())
-        # All 9 rubric challenges must be public.
         for slug in CORE_9_RUBRIC:
             assert slug in public, (
-                f"Quality challenge '{slug}' should be public after migration 019"
+                f"Quality challenge '{slug}' should be public after migration 020"
             )
-        # The old core-12 slugs should now be drafted.
+
+    def test_non_core_challenges_are_deleted(self):
+        """Migration 020 deletes all non-keep-list challenges (they don't exist at all)."""
         conn = get_connection()
-        seeded = {
+        all_slugs = {
             r[0]
             for r in conn.execute("SELECT slug FROM challenges").fetchall()
         }
-        for slug in CORE_12:
-            if slug in seeded:
-                assert slug not in public, (
-                    f"Old core challenge '{slug}' should be drafted after migration 019 supersedes 018"
-                )
-
-    def test_non_core_challenges_are_not_public(self):
-        public = set(self._get_public_slugs())
         for slug in NON_CORE_SLUGS:
-            assert slug not in public, (
-                f"Non-core challenge '{slug}' should be drafted (is_public=0)"
+            assert slug not in all_slugs, (
+                f"Non-core challenge '{slug}' should have been deleted by migration 020"
             )
 
-    def test_exactly_12_or_fewer_public_challenges(self):
-        """After migration 019 there are exactly 9 public challenges."""
+    def test_exactly_15_public_challenges(self):
+        """After migration 020 there are exactly 15 public challenges."""
         public = self._get_public_slugs()
-        assert len(public) == 9, (
-            f"Expected exactly 9 public challenges after migration 019, found {len(public)}: {public}"
+        assert len(public) == 15, (
+            f"Expected exactly 15 public challenges after migration 020, found {len(public)}: {sorted(public)}"
         )
 
-    def test_at_least_one_non_core_is_drafted(self):
+    def test_zero_challenges_are_drafted(self):
+        """After migration 020, all challenges in the catalog are public (0 drafted)."""
         conn = get_connection()
         drafted = conn.execute(
             "SELECT COUNT(*) FROM challenges WHERE is_public = 0"
         ).fetchone()[0]
-        assert drafted >= 1, "At least one non-core challenge should be drafted"
+        assert drafted == 0, (
+            f"Expected 0 drafted challenges after migration 020, got {drafted}"
+        )

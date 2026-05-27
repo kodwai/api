@@ -55,16 +55,20 @@ MIN_RUBRIC_DIMS: dict[str, int] = {
 # ---------------------------------------------------------------------------
 
 def test_exactly_9_public_challenges():
-    """After migration 019, exactly 9 challenges must be is_public=1."""
+    """After migration 019, at least the original 9 bespoke-rubric challenges are is_public=1.
+
+    NOTE: Migration 020 extends the catalog to 15 public challenges (adding 6 new senior
+    challenges from CHALLENGE_LIBRARY). This test now verifies the 9 original slugs are
+    still present and public, rather than asserting the total count is exactly 9.
+    See tests/scoring/test_curated_catalog.py for the 15-challenge count assertion.
+    """
     rows = fetch_all("SELECT slug FROM challenges WHERE is_public = 1")
     public_slugs = {r["slug"] for r in rows}
-    assert len(public_slugs) == 9, (
-        f"Expected exactly 9 public challenges, got {len(public_slugs)}: {sorted(public_slugs)}"
-    )
-    assert public_slugs == set(EXPECTED_SLUGS), (
-        f"Public slug set mismatch.\n"
-        f"  Missing: {set(EXPECTED_SLUGS) - public_slugs}\n"
-        f"  Extra  : {public_slugs - set(EXPECTED_SLUGS)}"
+    # The 9 original quality challenges must still all be present and public.
+    missing = set(EXPECTED_SLUGS) - public_slugs
+    assert not missing, (
+        f"Original quality challenge slugs missing from public catalog:\n"
+        f"  {sorted(missing)}"
     )
 
 

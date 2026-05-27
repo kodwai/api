@@ -12,8 +12,8 @@ def trap_coverage(ctx: ScoringContext) -> SignalResult:
 
 def baseline_lift(ctx: ScoringContext) -> SignalResult:
     """Static baseline (v1): weight is 0 in default profiles, so this never moves the
-    headline score yet. Reports the delta for the badge once challenge.ai_baseline is set."""
-    baseline = ctx.challenge.get("ai_baseline")
-    if baseline is None:
-        return SignalResult(0.0, "no AI baseline recorded yet", skipped=True)
-    return SignalResult(0.0, f"baseline={baseline} (lift computed at assembly time)")
+    headline score yet. The delta for the badge is computed in engine._assemble, not here.
+    Always skipped so a non-zero weight can never accidentally drag the axis score down
+    with a zero value before real lift computation exists.
+    # TODO(KOD-78): compute real normalized lift once live baselines exist."""
+    return SignalResult(0.0, "baseline lift not yet scored (see engine._assemble for badge delta)", skipped=True)

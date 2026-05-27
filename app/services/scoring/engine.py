@@ -90,16 +90,19 @@ def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
         overall += axis_score
         axes.append(AxisResult(axis_name, axis_cfg.points, axis_score, signal_details))
 
+    # leaderboard_eligible is the canonical source of truth; supersedes the old
+    # score_breakdown.$.analytical_skipped JSON flag written by migration 014.
     leaderboard_eligible = ctx.judgment is not None and len(ctx.judgment) > 0
 
     # Static baseline_lift badge (does not change the headline score in v1).
+    # ai_baseline is on a 0-100 scale; normalize outcome axis score (raw points) to 0-100 before comparing.
     baseline = ctx.challenge.get("ai_baseline")
     baseline_lift = None
     if baseline is not None:
         outcome_axis = next((a for a in axes if a.name == "outcome"), None)
-        artifact = outcome_axis.score if outcome_axis else 0.0
-        delta = round(artifact - float(baseline), 2)
-        baseline_lift = {"beat": delta > 0, "delta": delta}
+        artifact = (outcome_axis.score / outcome_axis.points * 100) if (outcome_axis and outcome_axis.points) else 0.0
+        delta = round(max(0.0, artifact - float(baseline)), 2)
+        baseline_lift = {"beat": artifact > float(baseline), "delta": delta}
 
     overall = min(round(overall, 1), 100.0)
     return ScoreBreakdown(SCORING_VERSION, overall, axes,

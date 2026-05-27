@@ -34,3 +34,14 @@ def test_recovery_detects_correction():
 
 def test_recovery_neutral_without_corrections():
     assert direction.recovery(_ctx(ONE_SHOT)).value == 0.7
+
+
+def test_recovery_single_correction_monotonic_vs_neutral():
+    """One correction must score >= neutral baseline (0.7); was 0.5 before fix."""
+    single_correction = [
+        {"role": "user", "content": "Build a rate limiter."},
+        {"role": "assistant", "content": "Here is a fixed-window implementation..."},
+        {"role": "user", "content": "Wrong — you should use a sliding window instead."},
+    ]
+    result = direction.recovery(_ctx(single_correction))
+    assert result.value >= 0.7, f"single correction scored {result.value} < 0.7 (non-monotonic)"

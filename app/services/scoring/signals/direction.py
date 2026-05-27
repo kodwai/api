@@ -34,7 +34,8 @@ def recovery(ctx: ScoringContext) -> SignalResult:
     corrections = [t for t in users if _CORRECTION.search(t["content"])]
     if not corrections:
         return SignalResult(0.7, "no explicit corrections detected (neutral)")
-    value = min(1.0, len(corrections) / 2.0)
+    # Monotonic: any correction scores >= the neutral baseline of 0.7.
+    value = min(1.0, 0.7 + 0.15 * len(corrections))
     return SignalResult(round(value, 3), f"{len(corrections)} corrective steer(s)",
                         [c["content"][:160] for c in corrections[:2]])
 

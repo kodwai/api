@@ -9,12 +9,36 @@ from app.core.database import fetch_all, fetch_one
 router = APIRouter(prefix="/events", tags=["events"])
 
 
+def _parse_canonical(value: str) -> datetime:
+    """Parse a stored datetime string (canonical 'YYYY-MM-DD HH:MM:SS' or any
+    ISO-8601 variant) into a timezone-aware UTC datetime.  Offset-naive values
+    are treated as UTC.
+    """
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    # Replace space separator with T for fromisoformat compatibility
+    normalized = normalized.replace(" ", "T", 1)
+    dt = datetime.fromisoformat(normalized)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt
+
+
 def _compute_status(starts_at: str, ends_at: str) -> str:
-    """Return 'upcoming', 'active', or 'ended' relative to now (UTC)."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    if now < starts_at:
+    """Return 'upcoming', 'active', or 'ended' relative to now (UTC).
+
+    Compares using parsed datetime objects so any stored format (canonical
+    space-separated OR ISO-8601 with T/offset) produces a correct result.
+    """
+    now = datetime.now(timezone.utc)
+    starts = _parse_canonical(starts_at)
+    ends   = _parse_canonical(ends_at)
+    if now < starts:
         return "upcoming"
-    if now <= ends_at:
+    if now <= ends:
         return "active"
     return "ended"
 
@@ -79,8 +103,8 @@ def event_leaderboard(id_or_slug: str) -> list[dict]:
                FROM submissions s
                WHERE s.status = 'scored'
                  AND s.leaderboard_eligible = 1
-                 AND s.scored_at >= ?
-                 AND s.scored_at <= ?
+                 AND datetime(s.scored_at) >= datetime(?)
+                 AND datetime(s.scored_at) <= datetime(?)
                GROUP BY s.user_id
            ) best
            JOIN users u ON best.user_id = u.id
@@ -90,8 +114,8 @@ def event_leaderboard(id_or_slug: str) -> list[dict]:
               AND winning.score = best.top_score
               AND winning.status = 'scored'
               AND winning.leaderboard_eligible = 1
-              AND winning.scored_at >= ?
-              AND winning.scored_at <= ?
+              AND datetime(winning.scored_at) >= datetime(?)
+              AND datetime(winning.scored_at) <= datetime(?)
               AND winning.scored_at = (
                   SELECT MIN(s3.scored_at)
                   FROM submissions s3
@@ -99,8 +123,8 @@ def event_leaderboard(id_or_slug: str) -> list[dict]:
                     AND s3.score = best.top_score
                     AND s3.status = 'scored'
                     AND s3.leaderboard_eligible = 1
-                    AND s3.scored_at >= ?
-                    AND s3.scored_at <= ?
+                    AND datetime(s3.scored_at) >= datetime(?)
+                    AND datetime(s3.scored_at) <= datetime(?)
               )
            ORDER BY best.top_score DESC, best.earliest_scored_at ASC
            LIMIT 100""",

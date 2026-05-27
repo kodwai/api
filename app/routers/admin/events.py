@@ -1,12 +1,38 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.admin_deps import AdminUser
 from app.core.database import execute, fetch_all, fetch_one
 from app.schemas.event import EventCreate
+
+
+def _parse_to_utc_canonical(value: str, field_name: str) -> str:
+    """Parse an ISO-8601 datetime string (with or without T/Z/offset) and
+    return it in SQLite canonical UTC format 'YYYY-MM-DD HH:MM:SS'.
+
+    Raises HTTP 400 if parsing fails.
+    """
+    try:
+        # Handle trailing 'Z' which Python < 3.11 fromisoformat doesn't accept
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        dt = datetime.fromisoformat(normalized)
+        # Convert to UTC (if offset-naive, assume UTC)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name}: invalid datetime format, expected ISO-8601",
+        )
 
 router = APIRouter(tags=["admin-events"])
 
@@ -30,8 +56,8 @@ def _leaderboard_for_event(event_id: str) -> list[dict]:
                FROM submissions s
                WHERE s.status = 'scored'
                  AND s.leaderboard_eligible = 1
-                 AND s.scored_at >= ?
-                 AND s.scored_at <= ?
+                 AND datetime(s.scored_at) >= datetime(?)
+                 AND datetime(s.scored_at) <= datetime(?)
                GROUP BY s.user_id
            ) best
            ORDER BY best.top_score DESC, best.earliest_scored_at ASC
@@ -43,8 +69,19 @@ def _leaderboard_for_event(event_id: str) -> list[dict]:
 
 @router.post("/events")
 def create_event(body: EventCreate, current_admin: AdminUser) -> dict:
-    """Create a new time-boxed event. ends_at must be after starts_at."""
-    if body.ends_at <= body.starts_at:
+    """Create a new time-boxed event. ends_at must be after starts_at.
+
+    starts_at/ends_at are accepted as any ISO-8601 string (with T-separator,
+    Z suffix, or +HH:MM offset) and are normalized to SQLite canonical UTC
+    format ('YYYY-MM-DD HH:MM:SS') before storage so that string comparison
+    with scored_at values (also in canonical format) is correct.
+    """
+    # Normalize both fields to canonical SQLite UTC format first so the
+    # ends_at > starts_at comparison is reliable regardless of input format.
+    starts_at = _parse_to_utc_canonical(body.starts_at, "starts_at")
+    ends_at   = _parse_to_utc_canonical(body.ends_at,   "ends_at")
+
+    if ends_at <= starts_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="ends_at must be after starts_at",
@@ -61,7 +98,7 @@ def create_event(body: EventCreate, current_admin: AdminUser) -> dict:
     execute(
         """INSERT INTO events (id, title, slug, description, starts_at, ends_at, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (event_id, body.title, body.slug, body.description, body.starts_at, body.ends_at, current_admin["id"]),
+        (event_id, body.title, body.slug, body.description, starts_at, ends_at, current_admin["id"]),
     )
     return fetch_one("SELECT * FROM events WHERE id = ?", (event_id,))
 

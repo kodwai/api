@@ -501,3 +501,60 @@ def test_finalize_fewer_than_3_winners(client: TestClient, admin_headers, event_
     data = resp.json()
     assert len(data["winners"]) == 1
     assert data["winners"][0]["rank"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression: KOD-77 — datetime format mismatch (T vs space, offset vs no-tz)
+# ---------------------------------------------------------------------------
+
+def test_leaderboard_includes_submission_when_event_created_with_iso8601_offset(
+    client: TestClient, admin_headers
+):
+    """Regression test for KOD-77.
+
+    The bug: admin create endpoint accepted ISO-8601 strings like
+    "2026-05-27T17:00:00+00:00" (T-separator, UTC offset) and stored them
+    verbatim.  SQLite's datetime('now') produces "YYYY-MM-DD HH:MM:SS"
+    (space-separator, no offset).  String comparison of
+    "2026-05-27 18:30:00" >= "2026-05-27T17:00:00+00:00" evaluates False
+    because 0x20 (space) < 0x54 ('T'), so ALL in-window submissions were
+    excluded → leaderboard always empty.
+
+    Fix: normalize starts_at/ends_at to SQLite canonical format on write, and
+    wrap both sides of every scored_at comparison in datetime() in SQL.
+    """
+    now = _now()
+    # Pass ISO-8601 strings WITH T-separator and explicit UTC offset — this is
+    # the real-world format the client sends and the exact format that triggers
+    # the bug.
+    starts_at_iso = (now - timedelta(hours=1)).isoformat()   # e.g. "2026-05-27T17:00:00+00:00"
+    ends_at_iso   = (now + timedelta(hours=2)).isoformat()   # e.g. "2026-05-27T20:00:00+00:00"
+
+    ev = client.post("/api/admin/events", headers=admin_headers, json={
+        "title": "ISO Offset Event",
+        "slug": "iso-offset-event",
+        "starts_at": starts_at_iso,
+        "ends_at": ends_at_iso,
+    }).json()
+    assert ev.get("id"), f"Event creation failed: {ev}"
+
+    challenge_id = _ensure_challenge(client, admin_headers)
+    u1 = _create_developer("iso1@test.com", "ISO Dev", "isodev")
+
+    # scored_at written via datetime('now') — SQLite canonical space-format,
+    # 30 minutes ago, clearly inside the event window.
+    scored_at_sqlite = _utc(now - timedelta(minutes=30))  # "YYYY-MM-DD HH:MM:SS"
+    _add_scored_submission(u1, challenge_id, 88.0, scored_at_sqlite)
+
+    resp = client.get(f"/api/events/{ev['id']}/leaderboard")
+    assert resp.status_code == 200
+    lb = resp.json()
+
+    # Before the fix this list was empty; after the fix u1 must appear.
+    user_ids = [e["user_id"] for e in lb]
+    assert u1 in user_ids, (
+        f"In-window submission excluded from leaderboard — datetime format bug not fixed. "
+        f"event starts_at stored={ev.get('starts_at')!r}, "
+        f"submission scored_at={scored_at_sqlite!r}, "
+        f"leaderboard={lb}"
+    )

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import execute, fetch_all, fetch_one
 from app.core.deps import AdminUser, CurrentUser
+from app.services.scoring.config import build_rubric
 from app.schemas.challenge import (
     CategoryCount,
     ChallengeCreate,
@@ -118,6 +119,13 @@ def list_featured() -> list[ChallengeListResponse]:
            ORDER BY created_at DESC LIMIT 10""",
     )
     return [_row_to_list_response(row) for row in rows]
+
+
+@router.get("/challenges/{id_or_slug}/rubric")
+def get_challenge_rubric(id_or_slug: str) -> dict:
+    """Public: how this challenge is scored (axes, weights, plain-language signal descriptions)."""
+    challenge = _get_challenge_or_404(id_or_slug)
+    return build_rubric(challenge.get("scoring_config"))
 
 
 @router.get("/challenges/{id_or_slug}", response_model=ChallengeResponse)

@@ -87,10 +87,11 @@ def test_debugging_profile_yields_direction_points_60():
     assert rubric["profile"] == "debugging"
 
 
-def test_spec_heavy_profile_direction_points_60():
-    """The spec_heavy profile must give direction=60 points.
-
-    Uses bookshelf-rest-api (present in the curated 15) instead of the deleted build-rest-api.
+def test_spec_heavy_profile_with_bespoke_rubric_uses_engine_layout():
+    """bookshelf-rest-api uses spec_heavy AND carries a bespoke rubric. The engine
+    rescales axes to Direction 45 / Challenge Rubric 45 / Lift 10 in bespoke mode;
+    the disclosure must mirror that so candidates see the actual scoring criteria.
+    (Pre-bespoke this asserted direction=60; updated to match real engine behavior.)
     """
     row = fetch_one(
         "SELECT scoring_config FROM challenges WHERE slug = 'bookshelf-rest-api'"
@@ -98,13 +99,11 @@ def test_spec_heavy_profile_direction_points_60():
     assert row is not None, "bookshelf-rest-api must be seeded in the test DB"
 
     rubric = build_rubric(row["scoring_config"])
-
-    direction_axis = next(
-        (a for a in rubric["axes"] if a["name"] == "direction"), None
-    )
+    direction_axis = next((a for a in rubric["axes"] if a["name"] == "direction"), None)
     assert direction_axis is not None
-    assert direction_axis["points"] == 60
+    assert direction_axis["points"] == 45  # bespoke layout
     assert rubric["profile"] == "spec_heavy"
+    assert any(a["name"] == "challenge_rubric" for a in rubric["axes"])
 
 
 @pytest.mark.skip(

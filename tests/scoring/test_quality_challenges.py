@@ -191,8 +191,11 @@ def test_rubric_dimensions_have_required_fields():
             assert dim["description"], f"slug={slug}: rubric dim description must not be empty"
 
 
-def test_scoring_config_profile_spec_heavy_has_correct_axes():
-    """For quality challenges, spec_heavy profile must provide direction=60, outcome=25, lift=15."""
+def test_scoring_config_bespoke_rubric_surfaces_in_disclosure():
+    """Quality challenges carry a bespoke rubric → disclosure must mirror the engine's
+    bespoke layout (Direction 45 / Challenge Rubric 45 / Lift 10), with each
+    rubric dimension surfaced as a 'signal' under challenge_rubric so candidates
+    see what they'll actually be scored on, not the profile's generic outcome."""
     from app.services.scoring.config import build_rubric
 
     slug = "bookshelf-rest-api"
@@ -202,7 +205,15 @@ def test_scoring_config_profile_spec_heavy_has_correct_axes():
     rubric_display = build_rubric(row["scoring_config"])
     axes_map = {a["name"]: a["points"] for a in rubric_display["axes"]}
 
-    assert axes_map.get("direction") == 60, f"spec_heavy direction must be 60, got {axes_map.get('direction')}"
-    assert axes_map.get("outcome") == 25, f"spec_heavy outcome must be 25, got {axes_map.get('outcome')}"
-    assert axes_map.get("lift") == 15, f"spec_heavy lift must be 15, got {axes_map.get('lift')}"
+    # Engine bespoke layout, mirrored in the disclosure:
+    assert axes_map.get("direction") == 45, f"bespoke direction must be 45, got {axes_map.get('direction')}"
+    assert axes_map.get("challenge_rubric") == 45, f"bespoke rubric axis missing or wrong points: {axes_map.get('challenge_rubric')}"
+    assert axes_map.get("lift") == 10, f"bespoke lift must be 10, got {axes_map.get('lift')}"
+    assert "outcome" not in axes_map, "outcome axis should be replaced by challenge_rubric in bespoke mode"
     assert rubric_display["profile"] == "spec_heavy"
+
+    # The rubric axis carries the bespoke dimensions as 'signals'.
+    rubric_axis = next(a for a in rubric_display["axes"] if a["name"] == "challenge_rubric")
+    assert len(rubric_axis["signals"]) >= 5
+    # Anchored descriptions (2/5/8/10) must survive so candidates see the bands.
+    assert any("10/10" in s["description"] for s in rubric_axis["signals"])

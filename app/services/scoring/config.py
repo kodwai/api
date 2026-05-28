@@ -89,17 +89,34 @@ SIGNAL_META: dict[str, dict] = {
 }
 
 AXIS_META: dict[str, dict] = {
-    "direction": {"label": "Direction", "blurb": "How well you direct the AI — the skill we care about most."},
-    "outcome":   {"label": "Outcome",   "blurb": "Quality of the final artifact."},
-    "lift":      {"label": "Lift",      "blurb": "Going beyond what a solo AI would produce."},
+    "direction":        {"label": "Direction",        "blurb": "How well you direct the AI — the skill we care about most."},
+    "outcome":          {"label": "Outcome",          "blurb": "Quality of the final artifact."},
+    "lift":             {"label": "Lift",             "blurb": "Going beyond what a solo AI would produce."},
+    "challenge_rubric": {"label": "Challenge Rubric", "blurb": "Domain-specific dimensions for this challenge — what 2/5/8/10 looks like."},
 }
+
+# When a challenge carries a bespoke `rubric`, the engine assembles axes as
+# Direction 45 / Challenge Rubric 45 / Lift 10 (Outcome is replaced by the
+# bespoke rubric). The disclosure must mirror that layout so candidates see the
+# rubric they'll actually be scored on, not the generic profile fallback.
+_BESPOKE_LAYOUT_POINTS = {"direction": 45.0, "challenge_rubric": 45.0, "lift": 10.0}
 
 
 def build_rubric(raw_scoring_config) -> dict:
-    """Resolve a challenge's scoring_config into a display-ready rubric."""
+    """Resolve a challenge's scoring_config into a display-ready rubric.
+
+    When `scoring_config.rubric` is non-empty, the displayed axes mirror the
+    engine's bespoke layout (Direction + Challenge Rubric + Lift, with the
+    bespoke dimensions surfaced as the rubric axis's signals) so the candidate
+    sees the actual scoring criteria, not the profile's generic outcome signals.
+    """
     cfg = resolve_config(raw_scoring_config)
+    has_bespoke = bool(cfg.rubric)
     axes = []
     for axis_name, axis_cfg in cfg.axes.items():
+        # In bespoke mode, the outcome axis is replaced by the rubric axis below.
+        if has_bespoke and axis_name == "outcome":
+            continue
         meta = AXIS_META.get(axis_name, {"label": axis_name.title(), "blurb": ""})
         signals = [
             {
@@ -111,10 +128,32 @@ def build_rubric(raw_scoring_config) -> dict:
             for sig, weight in axis_cfg.signals.items()
             if weight > 0  # hide zero-weight signals (e.g. baseline_lift in v1)
         ]
+        # Rescale the points so the disclosure reflects the engine's bespoke layout.
+        points = _BESPOKE_LAYOUT_POINTS.get(axis_name, axis_cfg.points) if has_bespoke else axis_cfg.points
         axes.append({
             "name": axis_name, "label": meta["label"], "blurb": meta["blurb"],
-            "points": axis_cfg.points, "signals": signals,
+            "points": points, "signals": signals,
         })
+
+    if has_bespoke:
+        meta = AXIS_META["challenge_rubric"]
+        rubric_signals = []
+        for dim in cfg.rubric:
+            # cfg.rubric is a list[dict] with {name, weight, description}.
+            name = dim["name"] if isinstance(dim, dict) else dim.name
+            weight = dim["weight"] if isinstance(dim, dict) else dim.weight
+            description = dim["description"] if isinstance(dim, dict) else dim.description
+            rubric_signals.append({
+                "name": name,
+                "label": name,
+                "description": description,  # already anchored at 2/5/8/10
+                "weight": weight,
+            })
+        axes.append({
+            "name": "challenge_rubric", "label": meta["label"], "blurb": meta["blurb"],
+            "points": _BESPOKE_LAYOUT_POINTS["challenge_rubric"], "signals": rubric_signals,
+        })
+
     return {"profile": cfg.profile, "axes": axes}
 
 

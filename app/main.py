@@ -4,11 +4,26 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import connect, disconnect, run_migrations
+
+# Initialize Sentry before the app is created. The FastAPI integration is
+# enabled automatically when the fastapi package is installed. Only active
+# when a DSN is configured, so local development is unaffected.
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        # Add data like request headers and IP for users.
+        send_default_pii=True,
+        # Capture transactions for tracing. Lower this in production to
+        # reduce the volume of performance data.
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+    )
 from app.routers import api_keys, auth, badges, blog, challenges, developer_profiles, events, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, submissions
 
 logging.basicConfig(
@@ -99,3 +114,13 @@ app.include_router(admin_events.router, prefix="/api/admin")
 def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# Sentry verification route. Deliberately triggers an error so you can confirm
+# events reach Sentry. Only registered outside production so it never ships as a
+# live error endpoint. Open http://localhost:8000/sentry-debug to test.
+if settings.SENTRY_ENVIRONMENT != "production":
+
+    @app.get("/sentry-debug")
+    async def trigger_error() -> None:
+        division_by_zero = 1 / 0

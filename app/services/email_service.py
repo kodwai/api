@@ -63,6 +63,46 @@ def _send_verification_email(to: str, token: str, base_url: str) -> None:
         logger.exception("Failed to send verification email to %s", to)
 
 
+def send_password_reset_email(to: str, token: str, base_url: str) -> None:
+    """Send a password reset link (non-blocking)."""
+    _send_in_background(_send_password_reset_email, to, token, base_url)
+
+
+def _send_password_reset_email(to: str, token: str, base_url: str) -> None:
+    _configure_resend()
+    reset_url = f"{base_url}/reset-password?token={token}"
+
+    try:
+        resend.Emails.send(
+            {
+                "from": "Kodwai <noreply@kodwai.com>",
+                "to": [to],
+                "subject": "Reset your password - Kodwai",
+                "html": f"""
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Reset your password</h2>
+                    <p>We received a request to reset the password for your Kodwai account.
+                       Click the link below to choose a new one. This link expires in 1 hour.</p>
+                    <p>
+                        <a href="{reset_url}"
+                           style="display: inline-block; padding: 12px 24px; background-color: #6366f1;
+                                  color: #ffffff; text-decoration: none; border-radius: 6px;">
+                            Reset Password
+                        </a>
+                    </p>
+                    <p style="color: #6b7280; font-size: 14px;">
+                        If you didn't request a password reset, you can safely ignore this email.
+                        Your password will not change.
+                    </p>
+                </div>
+                """,
+            }
+        )
+        logger.info("Password reset email sent to %s", to)
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", to)
+
+
 def send_invitation_email(to: str, org_name: str, inviter_name: str, invitation_id: str, base_url: str) -> None:
     """Send a team invitation email (non-blocking)."""
     _send_in_background(_send_invitation_email, to, org_name, inviter_name, invitation_id, base_url)

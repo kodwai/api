@@ -42,3 +42,6 @@ htmlcov/
 
 # Misc
 *.log
+
+# Demo/seed data tooling (not for production source control)
+demo_seed/

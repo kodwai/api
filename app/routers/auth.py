@@ -7,7 +7,19 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.deps import CurrentUser
-from app.schemas.auth import GitHubCallbackRequest, LoginRequest, SignupRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    CliAuthorizeResponse,
+    CliTokenRequest,
+    ForgotPasswordRequest,
+    GitHubCallbackRequest,
+    LoginRequest,
+    PasswordUpdateRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+    TokenResponse,
+    UserResponse,
+    UsernameUpdateRequest,
+)
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -22,7 +34,6 @@ def signup(body: SignupRequest) -> dict:
         name=body.name,
         user_type=body.user_type,
         organization_name=body.organization_name,
-        username=body.username,
         client_url=settings.CLIENT_URL,
     )
     return result
@@ -45,13 +56,60 @@ def logout():
 def verify_email(token: str = Query(..., description="Email verification token")) -> UserResponse:
     """Verify a user's email address."""
     user = auth_service.verify_email(token)
+    user["has_claude_api_key"] = auth_service.has_claude_api_key(user)
     return UserResponse(**user)
 
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: CurrentUser) -> UserResponse:
     """Get the current authenticated user."""
-    return UserResponse(**current_user)
+    payload = {**current_user, "has_claude_api_key": auth_service.has_claude_api_key(current_user)}
+    return UserResponse(**payload)
+
+
+@router.patch("/me/username", response_model=UserResponse)
+def update_username(body: UsernameUpdateRequest, current_user: CurrentUser) -> UserResponse:
+    """Update the current user's username."""
+    user = auth_service.update_username(current_user["id"], body.username)
+    return UserResponse(**user)
+
+
+@router.patch("/me/password", status_code=204)
+def update_password(body: PasswordUpdateRequest, current_user: CurrentUser):
+    """Change the current user's password after verifying the current one."""
+    auth_service.update_password(current_user["id"], body.current_password, body.new_password)
+    return None
+
+
+@router.post("/forgot-password", status_code=204)
+def forgot_password(body: ForgotPasswordRequest):
+    """Issue a password reset token and email it. Always returns 204 to avoid account enumeration."""
+    auth_service.request_password_reset(email=body.email, client_url=settings.CLIENT_URL)
+    return None
+
+
+@router.post("/reset-password", status_code=204)
+def reset_password(body: ResetPasswordRequest):
+    """Consume a reset token and set a new password."""
+    auth_service.reset_password(token=body.token, new_password=body.password)
+    return None
+
+
+@router.post("/cli/authorize", response_model=CliAuthorizeResponse)
+def cli_authorize(current_user: CurrentUser) -> CliAuthorizeResponse:
+    """Issue a one-time authorization code for a CLI device (loopback login flow).
+
+    Requires an authenticated web session: the logged-in user is approving a CLI
+    sign-in on this machine. The CLI exchanges the returned code via /cli/token.
+    """
+    result = auth_service.create_cli_auth_code(current_user["id"])
+    return CliAuthorizeResponse(**result)
+
+
+@router.post("/cli/token")
+def cli_token(body: CliTokenRequest) -> dict:
+    """Exchange a one-time CLI authorization code for an access token."""
+    return auth_service.exchange_cli_auth_code(body.code)
 
 
 @router.get("/github")

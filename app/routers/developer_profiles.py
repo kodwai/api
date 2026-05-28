@@ -50,6 +50,7 @@ class ProfileUpdateRequest(BaseModel):
     github_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     website_url: Optional[str] = None
+    x_url: Optional[str] = None
     skills: Optional[list[str]] = None
     preferred_agent: Optional[str] = None
 

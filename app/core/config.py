@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # Google Indexing
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
 
+    # Sentry
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]

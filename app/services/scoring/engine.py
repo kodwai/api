@@ -58,6 +58,7 @@ def _load_context(submission: dict, challenge: dict) -> ScoringContext:
     if key_row:
         try:
             api_key = decrypt_api_key(key_row["encrypted_key"], key_row["key_iv"], settings.ENCRYPTION_KEY)
+            ctx.has_api_key = True
             ctx.llm = LLMJudge(api_key)
             ctx.judgment = ctx.llm.judge(ctx)
             # If the challenge has a bespoke rubric, run the rubric judge as well.
@@ -246,6 +247,10 @@ def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
                                leaderboard_eligible=leaderboard_eligible, baseline_lift=baseline_lift)
     breakdown.trace_quality = (ctx.agent_trace or {}).get("trace_quality")
     breakdown.confidence = _trace_confidence(ctx)
+    # Distinguish "no API key" from "key present but the AI judge failed", so the
+    # UI can tell the user to re-submit instead of (wrongly) to add a key.
+    if not leaderboard_eligible:
+        breakdown.ineligible_reason = "scoring_error" if ctx.has_api_key else "no_api_key"
     return breakdown
 
 

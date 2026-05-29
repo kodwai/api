@@ -58,6 +58,35 @@ LLM_SIGNALS = {
 }
 
 
+def _extract_json(text: str) -> dict | None:
+    """Best-effort JSON object extraction from a model reply.
+
+    Handles bare JSON, ```json fenced blocks, and JSON wrapped in prose
+    (e.g. a "Here is the result:" preamble). Returns None if no object parses.
+    """
+    if not text or not text.strip():
+        return None
+    candidates: list[str] = []
+    # 1) a fenced ```json ... ``` (or plain ```) block, if present
+    fenced = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
+    if fenced:
+        candidates.append(fenced.group(1).strip())
+    # 2) the raw text as-is
+    candidates.append(text.strip())
+    # 3) the outermost {...} span (strips any prose around the object)
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    for candidate in candidates:
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
 class LLMJudge:
     def __init__(self, api_key: str, samples: int = 1):
         self._key = api_key
@@ -125,7 +154,7 @@ class LLMJudge:
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": self._key, "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
-                json={"model": settings.SCORING_MODEL, "max_tokens": 2048,
+                json={"model": settings.SCORING_MODEL, "max_tokens": 32000,
                       "temperature": 0, "messages": [{"role": "user", "content": prompt}]},
                 timeout=120.0,
             )
@@ -133,12 +162,11 @@ class LLMJudge:
                 logger.error("LLM judge HTTP %s: %s", resp.status_code, resp.text[:300])
                 return None
             text = "".join(b["text"] for b in resp.json().get("content", []) if b.get("type") == "text").strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            return json.loads(text.strip())
-        except (json.JSONDecodeError, KeyError, httpx.HTTPError):
+            parsed = _extract_json(text)
+            if parsed is None:
+                logger.error("LLM judge returned unparseable response: %r", text[:500])
+            return parsed
+        except (KeyError, httpx.HTTPError):
             logger.exception("LLM judge call failed")
             return None
 

@@ -31,6 +31,10 @@ class ScoreBreakdown:
     baseline_lift: Optional[dict] = None
     trace_quality: Optional[str] = None   # raw trace_quality string from agent_trace
     confidence: str = "high"              # "high"/"medium"/"low"/"none" — transparency only, does not affect score
+    # Why the submission is not leaderboard-eligible, when applicable:
+    # None (eligible), "no_api_key" (user has no Anthropic key), or
+    # "scoring_error" (key present but the AI judge call/parse failed).
+    ineligible_reason: Optional[str] = None
 
     def to_json(self) -> dict:
         return {
@@ -38,6 +42,7 @@ class ScoreBreakdown:
             "overall": self.overall,
             "late_penalty": self.late_penalty,
             "leaderboard_eligible": self.leaderboard_eligible,
+            "ineligible_reason": self.ineligible_reason,
             "baseline_lift": self.baseline_lift,
             "trace_quality": self.trace_quality,
             "confidence": self.confidence,
@@ -60,6 +65,7 @@ class ScoringContext:
     llm: Optional[Any] = None          # LLMJudge instance, or None when no API key
     judgment: Optional[dict] = None    # cached result of llm.judge(self)
     rubric_judgment: Optional[dict] = None  # cached result of llm.judge_rubric(self, rubric)
+    has_api_key: bool = False          # whether an Anthropic key was available for judging
 
     @property
     def turns(self) -> list[dict]:

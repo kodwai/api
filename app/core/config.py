@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # Scoring
     SCORING_MODEL: str = "claude-sonnet-4-6"
 
+    # Free tier — developers get FREE_SUBMISSION_LIMIT challenge submissions
+    # scored with the platform's own Anthropic key before they must add their
+    # own. Leave PLATFORM_ANTHROPIC_API_KEY empty to disable the free tier
+    # (developers then need their own key from the first submission).
+    PLATFORM_ANTHROPIC_API_KEY: str = ""
+    FREE_SUBMISSION_LIMIT: int = 3
+
     # GitHub OAuth
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""

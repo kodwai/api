@@ -18,6 +18,10 @@ os.environ.update({
     # Skip seeding default projects in tests that assert exact project counts.
     # The dedicated test in test_auth.py clears this for its own signup.
     "KODWAI_DISABLE_DEFAULT_PROJECTS": "1",
+    # Free tier off by default in tests (don't inherit a real key from .env.local).
+    # Tests that exercise the free tier monkeypatch this to a dummy value.
+    "PLATFORM_ANTHROPIC_API_KEY": "",
+    "FREE_SUBMISSION_LIMIT": "3",
 })
 
 from app.core.database import connect, disconnect, run_migrations, get_connection, execute, fetch_one

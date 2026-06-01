@@ -50,6 +50,26 @@ def has_claude_api_key(user: dict[str, Any]) -> bool:
     return row is not None
 
 
+def has_welcomed(user: dict[str, Any]) -> bool:
+    """Whether this developer has already seen the first-login welcome.
+
+    Company accounts have no welcome flow, so they are always considered welcomed.
+    """
+    if user.get("user_type") != "developer":
+        return True
+    row = fetch_one("SELECT welcomed_at FROM developer_profiles WHERE user_id = ?", (user["id"],))
+    return bool(row and row["welcomed_at"])
+
+
+def mark_welcomed(user_id: str) -> None:
+    """Record that a developer has seen the welcome intro (idempotent — set once)."""
+    execute(
+        "UPDATE developer_profiles SET welcomed_at = datetime('now'), updated_at = datetime('now') "
+        "WHERE user_id = ? AND welcomed_at IS NULL",
+        (user_id,),
+    )
+
+
 def signup(
     email: str,
     password: str,

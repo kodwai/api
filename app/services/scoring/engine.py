@@ -39,6 +39,26 @@ def _parse(value):
         return None
 
 
+def _resolve_api_key(submission: dict) -> str | None:
+    """Resolve which Anthropic key pays for this submission's AI scoring.
+
+    Driven by ``submission.key_source`` (set at submit time):
+      'platform' → the platform's own key (free tier).
+      'user'     → the developer's connected key.
+      NULL       → legacy rows: fall back to the developer's connected key.
+    Returns None when no usable key is configured (AI scoring is then skipped).
+    """
+    if submission.get("key_source") == "platform":
+        return settings.PLATFORM_ANTHROPIC_API_KEY or None
+    key_row = fetch_one(
+        "SELECT encrypted_key, key_iv FROM api_keys WHERE user_id=? AND is_active=1 LIMIT 1",
+        (submission["user_id"],),
+    )
+    if key_row:
+        return decrypt_api_key(key_row["encrypted_key"], key_row["key_iv"], settings.ENCRYPTION_KEY)
+    return None
+
+
 def _load_context(submission: dict, challenge: dict) -> ScoringContext:
     cfg = resolve_config(challenge.get("scoring_config"))
     ctx = ScoringContext(
@@ -50,14 +70,15 @@ def _load_context(submission: dict, challenge: dict) -> ScoringContext:
         git_log=_parse(submission.get("git_log")) or [],
         agent_trace=_parse(submission.get("agent_trace")),
     )
-    # Attach an LLM judge if the developer has an active API key.
-    key_row = fetch_one(
-        "SELECT encrypted_key, key_iv FROM api_keys WHERE user_id=? AND is_active=1 LIMIT 1",
-        (submission["user_id"],),
-    )
-    if key_row:
+    # Attach an LLM judge if a key (platform or developer's own) is available.
+    try:
+        api_key = _resolve_api_key(submission)
+    except Exception:
+        logger.exception("API key resolution failed for submission %s", submission["id"])
+        api_key = None
+
+    if api_key:
         try:
-            api_key = decrypt_api_key(key_row["encrypted_key"], key_row["key_iv"], settings.ENCRYPTION_KEY)
             ctx.has_api_key = True
             ctx.llm = LLMJudge(api_key)
             ctx.judgment = ctx.llm.judge(ctx)

@@ -20,9 +20,23 @@ from app.schemas.auth import (
     UserResponse,
     UsernameUpdateRequest,
 )
-from app.services import auth_service
+from app.services import auth_service, entitlement_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _user_response(user: dict) -> UserResponse:
+    """Build a UserResponse enriched with API-key, entitlement, and welcome state.
+
+    Single source so every endpoint returning the current user stays consistent
+    (notably can_submit, which the web app and CLI gate on).
+    """
+    return UserResponse(**{
+        **user,
+        "has_claude_api_key": auth_service.has_claude_api_key(user),
+        "welcomed": auth_service.has_welcomed(user),
+        **entitlement_service.get_entitlement(user),
+    })
 
 
 @router.post("/signup", status_code=201)
@@ -55,23 +69,26 @@ def logout():
 @router.get("/verify-email", response_model=UserResponse)
 def verify_email(token: str = Query(..., description="Email verification token")) -> UserResponse:
     """Verify a user's email address."""
-    user = auth_service.verify_email(token)
-    user["has_claude_api_key"] = auth_service.has_claude_api_key(user)
-    return UserResponse(**user)
+    return _user_response(auth_service.verify_email(token))
 
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: CurrentUser) -> UserResponse:
-    """Get the current authenticated user."""
-    payload = {**current_user, "has_claude_api_key": auth_service.has_claude_api_key(current_user)}
-    return UserResponse(**payload)
+    """Get the current authenticated user, including free-submission entitlement."""
+    return _user_response(current_user)
+
+
+@router.post("/me/welcome", status_code=204)
+def mark_welcome(current_user: CurrentUser):
+    """Mark the first-login welcome intro as seen for the current developer."""
+    auth_service.mark_welcomed(current_user["id"])
+    return None
 
 
 @router.patch("/me/username", response_model=UserResponse)
 def update_username(body: UsernameUpdateRequest, current_user: CurrentUser) -> UserResponse:
     """Update the current user's username."""
-    user = auth_service.update_username(current_user["id"], body.username)
-    return UserResponse(**user)
+    return _user_response(auth_service.update_username(current_user["id"], body.username))
 
 
 @router.patch("/me/password", status_code=204)

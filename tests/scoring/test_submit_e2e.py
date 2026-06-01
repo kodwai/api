@@ -57,8 +57,14 @@ def _developer_headers(client) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_submit_produces_v2_breakdown(client):
-    """Full path: start → submit → scoring runs after response → v2 breakdown in DB."""
+def test_submit_produces_v2_breakdown(client, monkeypatch):
+    """Full path: start → submit → scoring runs after response → v2 breakdown in DB.
+
+    The developer has no own key, so the submission rides the platform free tier:
+    we enable it via the platform key and stub the LLM judge so scoring stays
+    deterministic and offline.
+    """
+    monkeypatch.setattr("app.core.config.settings.PLATFORM_ANTHROPIC_API_KEY", "sk-ant-test-platform")
     headers = _developer_headers(client)
 
     # Insert a public challenge (scoring_config='{}' → resolves to balanced profile)
@@ -106,11 +112,16 @@ def test_submit_produces_v2_breakdown(client):
         )
     assert resp.status_code == 200, f"submit failed: {resp.text}"
 
-    # HTTP response has returned.  Now run the captured scorer synchronously —
-    # no API key on the user so all LLM signals are skipped (deterministic, no network).
+    # The submission should be reserved against the platform free tier.
+    assert fetch_one("SELECT key_source FROM submissions WHERE id=?", (sub_id,))["key_source"] == "platform"
+
+    # HTTP response has returned.  Now run the captured scorer synchronously with
+    # the LLM judge stubbed out (deterministic, no network).
     assert len(fake_thread_instance) == 1, "expected exactly one background scoring thread"
     t = fake_thread_instance[0]
-    t._target(*t._args)  # calls score_submission(sub_id)
+    with patch("app.services.scoring.llm.LLMJudge.judge", return_value={}), \
+         patch("app.services.scoring.llm.LLMJudge.judge_rubric", return_value={}):
+        t._target(*t._args)  # calls score_submission(sub_id)
 
     # Verify DB row has scoring_version=2 and the right axes
     row = fetch_one(

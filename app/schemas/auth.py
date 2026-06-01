@@ -67,4 +67,12 @@ class UserResponse(BaseModel):
     username: Optional[str] = None
     email_verified: bool
     has_claude_api_key: bool = False
+    # Free-submission entitlement (developer accounts). can_submit gates the UI:
+    # false means free credits are spent and no own key is connected.
+    free_submissions_used: int = 0
+    free_submissions_limit: int = 0
+    free_submissions_remaining: int = 0
+    can_submit: bool = True
+    # First-login welcome intro: false means the developer hasn't seen it yet.
+    welcomed: bool = True
     created_at: str

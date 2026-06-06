@@ -49,6 +49,7 @@ class SubmissionResponse(BaseModel):
     model_display: Optional[str] = None
     score: Optional[float] = None
     score_breakdown: Optional[dict] = None
+    celebration: Optional[dict] = None
     time_taken_ms: Optional[int] = None
     started_at: str
     submitted_at: Optional[str] = None

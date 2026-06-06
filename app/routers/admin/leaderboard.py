@@ -15,6 +15,7 @@ router = APIRouter(tags=["admin-leaderboard"])
 def admin_leaderboard(
     current_admin: AdminUser,
     agent: Optional[str] = None,
+    model: Optional[str] = None,
     category: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -22,7 +23,7 @@ def admin_leaderboard(
 ) -> dict:
     offset = (page - 1) * limit
 
-    if agent or category:
+    if agent or category or model:
         # Filtered: compute scores from matching submissions only.
         # leaderboard_eligible = 1 excludes submissions rated without the AI phase.
         sub_conditions = ["sub.status = 'scored'", "sub.score IS NOT NULL", "sub.leaderboard_eligible = 1"]
@@ -30,6 +31,9 @@ def admin_leaderboard(
         if agent:
             sub_conditions.append("sub.agent_used = ?")
             sub_params.append(agent)
+        if model:
+            sub_conditions.append("sub.model = ?")
+            sub_params.append(model)
         if category:
             sub_conditions.append("c.category = ?")
             sub_params.append(category)

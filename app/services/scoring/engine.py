@@ -389,7 +389,8 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                  submission.get("model"), submission.get("time_taken_ms"), existing_entry["id"]),
             )
 
-    # ── badge evaluation (challenge_scoring.py:199-207) ──
+    # ── badge evaluation + celebration payload (KOD-79) ──
+    new_badges: list[dict] = []
     try:
         from app.services.badge_engine import evaluate_badges
         new_badges = evaluate_badges(user_id, submission_id)
@@ -398,6 +399,28 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                         len(new_badges), user_id, [b["slug"] for b in new_badges])
     except Exception:
         logger.exception("Badge evaluation failed for user %s", user_id)
+
+    # Record what just happened so the results page can celebrate it once.
+    try:
+        best = fetch_one(
+            "SELECT MAX(score) AS best FROM submissions WHERE user_id = ? AND challenge_id = ? AND status = 'scored' AND score IS NOT NULL",
+            (user_id, challenge_id),
+        )
+        personal_best = best is None or best["best"] is None or overall >= best["best"]
+        celebration = {
+            "score": overall,
+            "personal_best": bool(personal_best),
+            "new_badges": [
+                {"slug": b["slug"], "name": b["name"], "icon": b.get("icon"), "description": b.get("description")}
+                for b in new_badges
+            ],
+        }
+        execute(
+            "UPDATE submissions SET celebration = ? WHERE id = ?",
+            (json.dumps(celebration), submission_id),
+        )
+    except Exception:
+        logger.exception("Celebration capture failed for user %s", user_id)
 
 
 def _recompute_ranks() -> None:

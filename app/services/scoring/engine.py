@@ -374,19 +374,19 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
         if existing_entry is None:
             entry_id = secrets.token_hex(16)
             execute(
-                """INSERT INTO leaderboard_entries (id, user_id, challenge_id, submission_id, score, agent_used, time_taken_ms, submitted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                """INSERT INTO leaderboard_entries (id, user_id, challenge_id, submission_id, score, agent_used, model, time_taken_ms, submitted_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
                 (entry_id, user_id, challenge_id, submission_id, overall,
-                 submission.get("agent_used"), submission.get("time_taken_ms")),
+                 submission.get("agent_used"), submission.get("model"), submission.get("time_taken_ms")),
             )
         elif overall > existing_entry["score"]:
             execute(
                 """UPDATE leaderboard_entries SET
-                      submission_id = ?, score = ?, agent_used = ?, time_taken_ms = ?,
+                      submission_id = ?, score = ?, agent_used = ?, model = ?, time_taken_ms = ?,
                       submitted_at = datetime('now')
                    WHERE id = ?""",
                 (submission_id, overall, submission.get("agent_used"),
-                 submission.get("time_taken_ms"), existing_entry["id"]),
+                 submission.get("model"), submission.get("time_taken_ms"), existing_entry["id"]),
             )
 
     # ── badge evaluation (challenge_scoring.py:199-207) ──

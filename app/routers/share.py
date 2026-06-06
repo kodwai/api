@@ -47,7 +47,7 @@ def create_share_link(submission_id: str, current_user: CurrentUser) -> dict:
 def get_share_data(share_token: str) -> dict:
     """Get public submission data for a shared score card. No auth required."""
     row = fetch_one(
-        """SELECT s.id, s.score, s.score_breakdown, s.agent_used, s.time_taken_ms,
+        """SELECT s.id, s.score, s.score_breakdown, s.agent_used, s.model_display, s.time_taken_ms,
                   s.started_at, s.submitted_at,
                   c.title as challenge_title, c.slug as challenge_slug,
                   c.difficulty as challenge_difficulty, c.category as challenge_category,
@@ -78,6 +78,7 @@ def get_share_data(share_token: str) -> dict:
         "analytical_score": (breakdown.get("analytical") or {}).get("total") if breakdown else None,
         "strengths": (breakdown.get("analytical") or {}).get("strengths", []) if breakdown else [],
         "agent_used": data["agent_used"],
+        "model_display": data.get("model_display"),
         "time_minutes": time_min,
         "time_limit_minutes": data["challenge_time_limit_minutes"],
         "username": data["username"],
@@ -183,10 +184,12 @@ def _draw_score_card_image(data: dict) -> bytes:
 
     # Agent and time
     agent = data.get("agent_used", "Unknown")
+    model_display = data.get("model_display")
+    agent_label = f"{model_display} · {agent}" if model_display else agent
     time_min = data.get("time_minutes")
 
     draw.text((stats_x, stats_y + 10), "AGENT", fill=muted, font=font_tiny)
-    draw.text((stats_x + 100, stats_y + 10), agent, fill=ink, font=font_small)
+    draw.text((stats_x + 100, stats_y + 10), agent_label, fill=ink, font=font_small)
 
     if time_min is not None:
         draw.text((stats_x + 350, stats_y + 10), "TIME", fill=muted, font=font_tiny)
@@ -220,7 +223,7 @@ def _draw_score_card_image(data: dict) -> bytes:
 def get_og_image(share_token: str) -> Response:
     """Generate OG image for a shared score card. Returns 1200x630 PNG."""
     row = fetch_one(
-        """SELECT s.score, s.score_breakdown, s.agent_used, s.time_taken_ms,
+        """SELECT s.score, s.score_breakdown, s.agent_used, s.model_display, s.time_taken_ms,
                   c.title as challenge_title, c.difficulty as challenge_difficulty,
                   c.time_limit_minutes,
                   u.username
@@ -245,6 +248,7 @@ def get_og_image(share_token: str) -> Response:
         "analytical_score": (breakdown.get("analytical") or {}).get("total") if breakdown else None,
         "strengths": (breakdown.get("analytical") or {}).get("strengths", []) if breakdown else [],
         "agent_used": data["agent_used"],
+        "model_display": data.get("model_display"),
         "time_minutes": time_min,
         "username": data["username"],
     }

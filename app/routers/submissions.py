@@ -16,6 +16,7 @@ from app.schemas.submission import (
     SubmissionResponse,
 )
 from app.services import entitlement_service
+from app.services.model_registry import normalize_model
 
 router = APIRouter(tags=["submissions"])
 
@@ -142,6 +143,10 @@ def submit_solution(submission_id: str, body: LocalSubmitRequest, current_user: 
     git_log_json = json.dumps(body.git_log) if body.git_log else None
     test_results_json = json.dumps(body.test_results.model_dump()) if body.test_results else None
     agent_trace_json = json.dumps(body.agent_trace) if body.agent_trace else None
+    norm = normalize_model(body.model_raw, body.model_provider)
+    model_slug = norm["slug"] if norm else None
+    model_display = norm["display"] if norm else None
+    model_provider = norm["provider"] if norm else None
 
     execute(
         """UPDATE submissions SET
@@ -152,6 +157,9 @@ def submit_solution(submission_id: str, body: LocalSubmitRequest, current_user: 
               test_results = ?,
               agent_used = ?,
               agent_trace = ?,
+              model = ?,
+              model_display = ?,
+              model_provider = ?,
               time_taken_ms = ?,
               key_source = ?,
               submitted_at = datetime('now'),
@@ -159,7 +167,9 @@ def submit_solution(submission_id: str, body: LocalSubmitRequest, current_user: 
            WHERE id = ?""",
         (
             code_json, body.git_diff, git_log_json, test_results_json,
-            body.agent_used, agent_trace_json, body.time_taken_ms,
+            body.agent_used, agent_trace_json,
+            model_slug, model_display, model_provider,
+            body.time_taken_ms,
             key_source,
             submission_id,
         ),

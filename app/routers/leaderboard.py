@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from app.core.database import fetch_all, fetch_one
 from app.core.deps import CurrentUser
+from app.services.model_registry import display_for_slug
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 @router.get("")
 def global_leaderboard(
     agent: Optional[str] = None,
+    model: Optional[str] = None,
     category: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
@@ -33,6 +35,9 @@ def global_leaderboard(
     if agent:
         sub_conditions.append("sub.agent_used = ?")
         sub_params.append(agent)
+    if model:
+        sub_conditions.append("sub.model = ?")
+        sub_params.append(model)
     if category:
         sub_conditions.append("c.category = ?")
         sub_params.append(category)
@@ -107,6 +112,7 @@ def leaderboard_categories() -> list[dict]:
 def challenge_leaderboard(
     challenge_id: str,
     agent: Optional[str] = None,
+    model: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
 ) -> dict:
@@ -117,6 +123,9 @@ def challenge_leaderboard(
     if agent:
         conditions.append("le.agent_used = ?")
         params.append(agent)
+    if model:
+        conditions.append("le.model = ?")
+        params.append(model)
 
     where = " AND ".join(conditions)
     offset = (page - 1) * limit
@@ -134,6 +143,9 @@ def challenge_leaderboard(
 
     for i, row in enumerate(rows):
         row["rank"] = offset + i + 1
+
+    for row in rows:
+        row["model_display"] = display_for_slug(row.get("model"))
 
     total = fetch_one(
         f"SELECT COUNT(*) as count FROM leaderboard_entries le WHERE {where}",
@@ -159,4 +171,17 @@ def my_rankings(current_user: CurrentUser) -> list[dict]:
            ORDER BY le.score DESC""",
         (current_user["id"],),
     )
+    for row in rows:
+        row["model_display"] = display_for_slug(row.get("model"))
     return rows
+
+
+@router.get("/models")
+def leaderboard_models() -> list[dict]:
+    """Distinct models present on eligible scored submissions, for filtering."""
+    rows = fetch_all(
+        """SELECT DISTINCT model FROM submissions
+           WHERE status = 'scored' AND leaderboard_eligible = 1 AND model IS NOT NULL
+           ORDER BY model""",
+    )
+    return [{"slug": r["model"], "display": display_for_slug(r["model"])} for r in rows]

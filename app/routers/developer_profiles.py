@@ -32,7 +32,7 @@ def get_my_profile(current_user: CurrentUser) -> dict:
 
     # Include recent submissions
     submissions = fetch_all(
-        """SELECT s.id, s.score, s.agent_used, s.time_taken_ms, s.scored_at,
+        """SELECT s.id, s.score, s.agent_used, s.model_display, s.time_taken_ms, s.scored_at,
                   c.title as challenge_title, c.slug as challenge_slug, c.difficulty
            FROM submissions s
            JOIN challenges c ON s.challenge_id = c.id
@@ -95,7 +95,7 @@ def get_public_profile(username: str) -> dict:
 
     # Get recent submissions (public)
     submissions = fetch_all(
-        """SELECT s.id, s.score, s.agent_used, s.time_taken_ms, s.scored_at,
+        """SELECT s.id, s.score, s.agent_used, s.model_display, s.time_taken_ms, s.scored_at,
                   c.title as challenge_title, c.slug as challenge_slug, c.difficulty
            FROM submissions s
            JOIN challenges c ON s.challenge_id = c.id
@@ -128,7 +128,7 @@ def get_developer_submissions(username: str) -> list[dict]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Developer not found")
 
     rows = fetch_all(
-        """SELECT s.id, s.score, s.agent_used, s.time_taken_ms, s.scored_at,
+        """SELECT s.id, s.score, s.agent_used, s.model_display, s.time_taken_ms, s.scored_at,
                   c.title as challenge_title, c.slug as challenge_slug, c.difficulty
            FROM submissions s
            JOIN challenges c ON s.challenge_id = c.id

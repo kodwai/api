@@ -32,6 +32,8 @@ class LocalSubmitRequest(BaseModel):
     git_log: Optional[list[dict]] = None
     test_results: Optional[TestResults] = None
     agent_used: Optional[str] = None
+    model_raw: Optional[str] = None
+    model_provider: Optional[str] = None
     agent_trace: Optional[dict] = None
     time_taken_ms: int = 0
 
@@ -43,6 +45,8 @@ class SubmissionResponse(BaseModel):
     status: str
     mode: str
     agent_used: Optional[str] = None
+    model: Optional[str] = None
+    model_display: Optional[str] = None
     score: Optional[float] = None
     score_breakdown: Optional[dict] = None
     time_taken_ms: Optional[int] = None

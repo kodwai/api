@@ -184,10 +184,12 @@ def _draw_score_card_image(data: dict) -> bytes:
 
     # Agent and time
     agent = data.get("agent_used", "Unknown")
+    model_display = data.get("model_display")
+    agent_label = f"{model_display} · {agent}" if model_display else agent
     time_min = data.get("time_minutes")
 
     draw.text((stats_x, stats_y + 10), "AGENT", fill=muted, font=font_tiny)
-    draw.text((stats_x + 100, stats_y + 10), agent, fill=ink, font=font_small)
+    draw.text((stats_x + 100, stats_y + 10), agent_label, fill=ink, font=font_small)
 
     if time_min is not None:
         draw.text((stats_x + 350, stats_y + 10), "TIME", fill=muted, font=font_tiny)

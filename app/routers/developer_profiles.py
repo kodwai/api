@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.core.database import execute, fetch_all, fetch_one
 from app.core.deps import CurrentUser
+from app.services.feature_flags import require_flag
 
 router = APIRouter(tags=["developers"])
 
@@ -104,7 +105,7 @@ def my_skills(current_user: CurrentUser) -> dict:
     }
 
 
-@router.get("/developers/me/wrapped")
+@router.get("/developers/me/wrapped", dependencies=[require_flag("wrapped")])
 def my_wrapped(current_user: CurrentUser) -> dict:
     """Aggregated 'kodwai Wrapped' recap of the current developer's stats."""
     if current_user.get("user_type") != "developer":

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.database import fetch_all, fetch_one
 from app.core.deps import CurrentUser
 from app.routers.challenges import _row_to_list_response
+from app.services.feature_flags import require_flag
 
 router = APIRouter(prefix="/sprint", tags=["sprint"])
 
@@ -33,7 +34,7 @@ def sprint_index(week_key: str, count: int) -> int:
     return int(hashlib.sha256(("sprint:" + week_key).encode("utf-8")).hexdigest(), 16) % count
 
 
-@router.get("/current")
+@router.get("/current", dependencies=[require_flag("weekly_sprint")])
 def current_sprint(current_user: CurrentUser) -> dict:
     """This week's deterministic sprint challenge + live leaderboard + the
     caller's standing. Window is the current ISO week (UTC)."""

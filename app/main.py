@@ -24,7 +24,7 @@ if settings.SENTRY_DSN:
         # reduce the volume of performance data.
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
     )
-from app.routers import api_keys, auth, badges, blog, challenges, developer_profiles, events, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, sprint, submissions
+from app.routers import api_keys, auth, badges, blog, challenges, developer_profiles, events, feature_flags, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, sprint, submissions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +84,7 @@ app.include_router(feedback.router, prefix="/api")
 app.include_router(share.router, prefix="/api")
 app.include_router(blog.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
+app.include_router(feature_flags.router, prefix="/api")
 app.include_router(sprint.router, prefix="/api")
 
 # Admin routers
@@ -92,6 +93,7 @@ from app.routers.admin import organizations as admin_orgs, sessions as admin_ses
 from app.routers.admin import badges as admin_badges, api_keys as admin_api_keys, system as admin_system, leaderboard as admin_leaderboard, feedback as admin_feedback
 from app.routers.admin import blog as admin_blog, blog_images as admin_blog_images
 from app.routers.admin import events as admin_events
+from app.routers.admin import feature_flags as admin_feature_flags
 app.include_router(admin_auth.router, prefix="/api/admin")
 app.include_router(admin_dashboard.router, prefix="/api/admin")
 app.include_router(admin_users.router, prefix="/api/admin")
@@ -109,6 +111,7 @@ app.include_router(admin_feedback.router, prefix="/api/admin")
 app.include_router(admin_blog.router, prefix="/api/admin")
 app.include_router(admin_blog_images.router, prefix="/api/admin")
 app.include_router(admin_events.router, prefix="/api/admin")
+app.include_router(admin_feature_flags.router, prefix="/api/admin")
 
 
 @app.get("/api/health")

@@ -33,6 +33,18 @@ def compute_streak(current_streak: int | None, last_submission_at: str | None) -
         return (current_streak or 0) + 1
     return 1
 
+_CHALLENGE_RATING = {"easy": 1000, "medium": 1300, "hard": 1600}
+
+
+def update_rating(current_rating: int | None, difficulty: str | None, score: float | None, k: int = 24) -> int:
+    """ELO-style update: the challenge (by difficulty) is the opponent, score/100 the outcome."""
+    r = current_rating if current_rating else 1000
+    cr = _CHALLENGE_RATING.get((difficulty or "").lower(), 1300)
+    expected = 1.0 / (1.0 + 10 ** ((cr - r) / 400.0))
+    outcome = max(0.0, min(1.0, (score or 0) / 100.0))
+    return max(100, round(r + k * (outcome - expected)))
+
+
 SCORING_VERSION = 2
 
 
@@ -359,6 +371,9 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
     # Weighted total score: easy=1x, medium=1.5x, hard=2x
     _prof = fetch_one("SELECT streak_days, last_submission_at FROM developer_profiles WHERE user_id = ?", (user_id,))
     new_streak = compute_streak(_prof.get("streak_days") if _prof else 0, _prof.get("last_submission_at") if _prof else None)
+    _cur = fetch_one("SELECT direction_rating FROM developer_profiles WHERE user_id = ?", (user_id,))
+    _ch = fetch_one("SELECT difficulty FROM challenges WHERE id = ?", (challenge_id,))
+    new_rating = update_rating(_cur.get("direction_rating") if _cur else 1000, _ch.get("difficulty") if _ch else None, overall)
     execute(
         """UPDATE developer_profiles SET
               challenges_completed = (SELECT COUNT(DISTINCT challenge_id) FROM submissions WHERE user_id = ? AND status = 'scored'),
@@ -375,10 +390,11 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                 ) best), 0),
               preferred_agent = ?,
               streak_days = ?,
+              direction_rating = ?,
               last_submission_at = datetime('now'),
               updated_at = datetime('now')
            WHERE user_id = ?""",
-        (user_id, user_id, preferred_agent, new_streak, user_id),
+        (user_id, user_id, preferred_agent, new_streak, new_rating, user_id),
     )
 
     # ── recompute global ranks ──

@@ -24,6 +24,7 @@ router = APIRouter(tags=["submissions"])
 def _row_to_response(row: dict) -> SubmissionResponse:
     data = dict(row)
     data["score_breakdown"] = json.loads(data["score_breakdown"]) if data.get("score_breakdown") else None
+    data["celebration"] = json.loads(data["celebration"]) if data.get("celebration") else None
     return SubmissionResponse(**data)
 
 

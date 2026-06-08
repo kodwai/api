@@ -112,6 +112,22 @@ def _get_user_stats(user_id: str) -> dict:
     }
 
 
+def badge_progress(criteria: dict, stats: dict) -> dict:
+    """Map a badge's criteria + user stats to {progressable, current, target}.
+    Only count-based criteria are progressable; others -> progressable False."""
+    ctype = criteria.get("type")
+    if ctype == "challenges_completed":
+        return {"progressable": True, "current": int(stats.get("challenges_completed") or 0), "target": int(criteria.get("min", 1))}
+    if ctype == "streak":
+        return {"progressable": True, "current": int(stats.get("streak_days") or 0), "target": int(criteria.get("min", 3))}
+    if ctype == "categories":
+        return {"progressable": True, "current": int(stats.get("categories_count") or 0), "target": int(criteria.get("min", 3))}
+    if ctype == "agent_score":
+        agent = criteria.get("agent", "")
+        return {"progressable": True, "current": int((stats.get("agent_scores") or {}).get(agent, 0)), "target": int(criteria.get("min_count", 5))}
+    return {"progressable": False, "current": 0, "target": 0}
+
+
 def _check_criteria(criteria: dict, stats: dict, user_id: str, submission_id: str) -> bool:
     """Check if a badge's criteria are met."""
     ctype = criteria.get("type")

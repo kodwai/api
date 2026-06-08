@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.database import execute, fetch_all, fetch_one
@@ -13,6 +14,53 @@ from app.services.scoring.models import AxisResult, ScoreBreakdown, ScoringConte
 from app.services.scoring.registry import get_signal
 
 logger = logging.getLogger(__name__)
+
+
+def compute_streak(current_streak: int | None, last_submission_at: str | None) -> int:
+    """New consecutive-day streak given the PREVIOUS last_submission_at (UTC).
+    First/none -> 1; same UTC day -> unchanged (>=1); yesterday -> +1; gap -> 1."""
+    today = datetime.now(timezone.utc).date()
+    if not last_submission_at:
+        return 1
+    try:
+        last = datetime.fromisoformat(str(last_submission_at).replace("Z", "")).date()
+    except Exception:
+        return 1
+    delta = (today - last).days
+    if delta <= 0:
+        return current_streak if current_streak and current_streak > 0 else 1
+    if delta == 1:
+        return (current_streak or 0) + 1
+    return 1
+
+_CHALLENGE_RATING = {"easy": 1000, "medium": 1300, "hard": 1600}
+
+
+def update_rating(current_rating: int | None, difficulty: str | None, score: float | None, k: int = 24) -> int:
+    """ELO-style update: the challenge (by difficulty) is the opponent, score/100 the outcome."""
+    r = current_rating if current_rating else 1000
+    cr = _CHALLENGE_RATING.get((difficulty or "").lower(), 1300)
+    expected = 1.0 / (1.0 + 10 ** ((cr - r) / 400.0))
+    outcome = max(0.0, min(1.0, (score or 0) / 100.0))
+    return max(100, round(r + k * (outcome - expected)))
+
+
+def _bump_skill_rating(user_id: str, dimension: str, key: str | None, difficulty: str | None, score: float | None) -> None:
+    """Upsert a per-dimension mastery rating (ELO) for the given key (category or model)."""
+    if not key:
+        return
+    row = fetch_one(
+        "SELECT rating FROM user_skill_ratings WHERE user_id = ? AND dimension = ? AND key = ?",
+        (user_id, dimension, key),
+    )
+    new = update_rating(row["rating"] if row else 1000, difficulty, score)
+    execute(
+        """INSERT INTO user_skill_ratings (user_id, dimension, key, rating, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, dimension, key) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at""",
+        (user_id, dimension, key, new),
+    )
+
 
 SCORING_VERSION = 2
 
@@ -338,6 +386,11 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
     preferred_agent = agent_row["agent_used"] if agent_row else None
 
     # Weighted total score: easy=1x, medium=1.5x, hard=2x
+    _prof = fetch_one("SELECT streak_days, last_submission_at FROM developer_profiles WHERE user_id = ?", (user_id,))
+    new_streak = compute_streak(_prof.get("streak_days") if _prof else 0, _prof.get("last_submission_at") if _prof else None)
+    _cur = fetch_one("SELECT direction_rating FROM developer_profiles WHERE user_id = ?", (user_id,))
+    _ch = fetch_one("SELECT difficulty, category FROM challenges WHERE id = ?", (challenge_id,))
+    new_rating = update_rating(_cur.get("direction_rating") if _cur else 1000, _ch.get("difficulty") if _ch else None, overall)
     execute(
         """UPDATE developer_profiles SET
               challenges_completed = (SELECT COUNT(DISTINCT challenge_id) FROM submissions WHERE user_id = ? AND status = 'scored'),
@@ -353,11 +406,20 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                   GROUP BY s.challenge_id
                 ) best), 0),
               preferred_agent = ?,
+              streak_days = ?,
+              direction_rating = ?,
               last_submission_at = datetime('now'),
               updated_at = datetime('now')
            WHERE user_id = ?""",
-        (user_id, user_id, preferred_agent, user_id),
+        (user_id, user_id, preferred_agent, new_streak, new_rating, user_id),
     )
+
+    # ── per-category / per-model mastery ratings (KOD-79) ──
+    try:
+        _bump_skill_rating(user_id, "category", (_ch.get("category") if _ch else None), (_ch.get("difficulty") if _ch else None), overall)
+        _bump_skill_rating(user_id, "model", submission.get("model"), (_ch.get("difficulty") if _ch else None), overall)
+    except Exception:
+        logger.exception("Skill rating update failed for user %s", user_id)
 
     # ── recompute global ranks ──
     _recompute_ranks()
@@ -389,7 +451,8 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                  submission.get("model"), submission.get("time_taken_ms"), existing_entry["id"]),
             )
 
-    # ── badge evaluation (challenge_scoring.py:199-207) ──
+    # ── badge evaluation + celebration payload (KOD-79) ──
+    new_badges: list[dict] = []
     try:
         from app.services.badge_engine import evaluate_badges
         new_badges = evaluate_badges(user_id, submission_id)
@@ -398,6 +461,30 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                         len(new_badges), user_id, [b["slug"] for b in new_badges])
     except Exception:
         logger.exception("Badge evaluation failed for user %s", user_id)
+
+    # Record what just happened so the results page can celebrate it once.
+    try:
+        best = fetch_one(
+            "SELECT MAX(score) AS best FROM submissions WHERE user_id = ? AND challenge_id = ? AND status = 'scored' AND score IS NOT NULL",
+            (user_id, challenge_id),
+        )
+        personal_best = best is None or best["best"] is None or overall >= best["best"]
+        celebration = {
+            "score": overall,
+            "personal_best": bool(personal_best),
+            "new_badges": [
+                {"slug": b["slug"], "name": b["name"], "icon": b.get("icon"), "description": b.get("description")}
+                for b in new_badges
+            ],
+            "streak": new_streak,
+            "streak_milestone": new_streak in (3, 7, 30, 100, 365),
+        }
+        execute(
+            "UPDATE submissions SET celebration = ? WHERE id = ?",
+            (json.dumps(celebration), submission_id),
+        )
+    except Exception:
+        logger.exception("Celebration capture failed for user %s", user_id)
 
 
 def _recompute_ranks() -> None:

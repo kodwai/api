@@ -28,6 +28,26 @@ def list_badges() -> list[dict]:
     return badges
 
 
+@router.get("/progress")
+def badge_progress_me(current_user: CurrentUser) -> list[dict]:
+    """All badges with earned state + progress toward unearned countable ones."""
+    from app.services.badge_engine import _get_user_stats, badge_progress
+    badges = fetch_all("SELECT id, name, slug, description, icon, category, criteria FROM badges WHERE is_active = 1 ORDER BY category, name")
+    earned = {r["badge_id"] for r in fetch_all("SELECT badge_id FROM developer_badges WHERE user_id = ?", (current_user["id"],))}
+    stats = _get_user_stats(current_user["id"])
+    out = []
+    for b in badges:
+        crit = json.loads(b["criteria"]) if b.get("criteria") else {}
+        prog = badge_progress(crit, stats)
+        out.append({
+            "slug": b["slug"], "name": b["name"], "description": b["description"],
+            "icon": b["icon"], "category": b["category"],
+            "earned": b["id"] in earned,
+            "progressable": prog["progressable"], "current": prog["current"], "target": prog["target"],
+        })
+    return out
+
+
 @router.get("/me")
 def my_badges(current_user: CurrentUser) -> list[dict]:
     """List current developer's earned badges."""

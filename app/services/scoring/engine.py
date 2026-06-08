@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.database import execute, fetch_all, fetch_one
@@ -13,6 +14,24 @@ from app.services.scoring.models import AxisResult, ScoreBreakdown, ScoringConte
 from app.services.scoring.registry import get_signal
 
 logger = logging.getLogger(__name__)
+
+
+def compute_streak(current_streak: int | None, last_submission_at: str | None) -> int:
+    """New consecutive-day streak given the PREVIOUS last_submission_at (UTC).
+    First/none -> 1; same UTC day -> unchanged (>=1); yesterday -> +1; gap -> 1."""
+    today = datetime.now(timezone.utc).date()
+    if not last_submission_at:
+        return 1
+    try:
+        last = datetime.fromisoformat(str(last_submission_at).replace("Z", "")).date()
+    except Exception:
+        return 1
+    delta = (today - last).days
+    if delta <= 0:
+        return current_streak if current_streak and current_streak > 0 else 1
+    if delta == 1:
+        return (current_streak or 0) + 1
+    return 1
 
 SCORING_VERSION = 2
 
@@ -338,6 +357,8 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
     preferred_agent = agent_row["agent_used"] if agent_row else None
 
     # Weighted total score: easy=1x, medium=1.5x, hard=2x
+    _prof = fetch_one("SELECT streak_days, last_submission_at FROM developer_profiles WHERE user_id = ?", (user_id,))
+    new_streak = compute_streak(_prof.get("streak_days") if _prof else 0, _prof.get("last_submission_at") if _prof else None)
     execute(
         """UPDATE developer_profiles SET
               challenges_completed = (SELECT COUNT(DISTINCT challenge_id) FROM submissions WHERE user_id = ? AND status = 'scored'),
@@ -353,10 +374,11 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                   GROUP BY s.challenge_id
                 ) best), 0),
               preferred_agent = ?,
+              streak_days = ?,
               last_submission_at = datetime('now'),
               updated_at = datetime('now')
            WHERE user_id = ?""",
-        (user_id, user_id, preferred_agent, user_id),
+        (user_id, user_id, preferred_agent, new_streak, user_id),
     )
 
     # ── recompute global ranks ──
@@ -414,6 +436,8 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
                 {"slug": b["slug"], "name": b["name"], "icon": b.get("icon"), "description": b.get("description")}
                 for b in new_badges
             ],
+            "streak": new_streak,
+            "streak_milestone": new_streak in (3, 7, 30, 100, 365),
         }
         execute(
             "UPDATE submissions SET celebration = ? WHERE id = ?",

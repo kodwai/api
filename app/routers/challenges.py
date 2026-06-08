@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -52,6 +54,14 @@ def _get_challenge_or_404(id_or_slug: str) -> dict:
     if challenge is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Challenge not found")
     return challenge
+
+
+def daily_index(date_str: str, count: int) -> int:
+    """Deterministic index into `count` items for a UTC date string (YYYY-MM-DD).
+    Stable within a day, rotates across days."""
+    if count <= 0:
+        return 0
+    return int(hashlib.sha256(date_str.encode("utf-8")).hexdigest(), 16) % count
 
 
 # ── Public endpoints ──
@@ -119,6 +129,26 @@ def list_featured() -> list[ChallengeListResponse]:
            ORDER BY created_at DESC LIMIT 10""",
     )
     return [_row_to_list_response(row) for row in rows]
+
+
+@router.get("/challenges/daily")
+def daily_challenge(current_user: CurrentUser) -> dict:
+    """Today's deterministic Challenge of the Day + whether the user completed it today (UTC)."""
+    rows = fetch_all("SELECT * FROM challenges WHERE is_public = 1 ORDER BY id")
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No challenges available")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    chosen = rows[daily_index(today, len(rows))]
+    completed = fetch_one(
+        """SELECT 1 FROM submissions
+           WHERE user_id = ? AND challenge_id = ? AND status = 'scored'
+             AND substr(scored_at, 1, 10) = ?
+           LIMIT 1""",
+        (current_user["id"], chosen["id"], today),
+    )
+    listed = _row_to_list_response(chosen)
+    challenge = listed.model_dump() if hasattr(listed, "model_dump") else listed
+    return {"challenge": challenge, "completed_today": bool(completed), "date": today}
 
 
 @router.get("/challenges/{id_or_slug}/rubric")

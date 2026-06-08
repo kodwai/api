@@ -24,7 +24,7 @@ if settings.SENTRY_DSN:
         # reduce the volume of performance data.
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
     )
-from app.routers import api_keys, auth, badges, blog, challenges, developer_profiles, events, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, submissions
+from app.routers import api_keys, auth, badges, blog, challenges, developer_profiles, events, feedback, leaderboard, organizations, projects, proxy, scores, sessions, share, sprint, submissions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +84,7 @@ app.include_router(feedback.router, prefix="/api")
 app.include_router(share.router, prefix="/api")
 app.include_router(blog.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
+app.include_router(sprint.router, prefix="/api")
 
 # Admin routers
 from app.routers.admin import auth as admin_auth, dashboard as admin_dashboard, users as admin_users, challenges as admin_challenges

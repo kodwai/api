@@ -45,6 +45,23 @@ def update_rating(current_rating: int | None, difficulty: str | None, score: flo
     return max(100, round(r + k * (outcome - expected)))
 
 
+def _bump_skill_rating(user_id: str, dimension: str, key: str | None, difficulty: str | None, score: float | None) -> None:
+    """Upsert a per-dimension mastery rating (ELO) for the given key (category or model)."""
+    if not key:
+        return
+    row = fetch_one(
+        "SELECT rating FROM user_skill_ratings WHERE user_id = ? AND dimension = ? AND key = ?",
+        (user_id, dimension, key),
+    )
+    new = update_rating(row["rating"] if row else 1000, difficulty, score)
+    execute(
+        """INSERT INTO user_skill_ratings (user_id, dimension, key, rating, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, dimension, key) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at""",
+        (user_id, dimension, key, new),
+    )
+
+
 SCORING_VERSION = 2
 
 
@@ -372,7 +389,7 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
     _prof = fetch_one("SELECT streak_days, last_submission_at FROM developer_profiles WHERE user_id = ?", (user_id,))
     new_streak = compute_streak(_prof.get("streak_days") if _prof else 0, _prof.get("last_submission_at") if _prof else None)
     _cur = fetch_one("SELECT direction_rating FROM developer_profiles WHERE user_id = ?", (user_id,))
-    _ch = fetch_one("SELECT difficulty FROM challenges WHERE id = ?", (challenge_id,))
+    _ch = fetch_one("SELECT difficulty, category FROM challenges WHERE id = ?", (challenge_id,))
     new_rating = update_rating(_cur.get("direction_rating") if _cur else 1000, _ch.get("difficulty") if _ch else None, overall)
     execute(
         """UPDATE developer_profiles SET
@@ -396,6 +413,13 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
            WHERE user_id = ?""",
         (user_id, user_id, preferred_agent, new_streak, new_rating, user_id),
     )
+
+    # ── per-category / per-model mastery ratings (KOD-79) ──
+    try:
+        _bump_skill_rating(user_id, "category", (_ch.get("category") if _ch else None), (_ch.get("difficulty") if _ch else None), overall)
+        _bump_skill_rating(user_id, "model", submission.get("model"), (_ch.get("difficulty") if _ch else None), overall)
+    except Exception:
+        logger.exception("Skill rating update failed for user %s", user_id)
 
     # ── recompute global ranks ──
     _recompute_ranks()

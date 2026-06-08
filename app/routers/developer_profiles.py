@@ -78,6 +78,21 @@ def update_my_profile(body: ProfileUpdateRequest, current_user: CurrentUser) -> 
     return get_my_profile(current_user)
 
 
+@router.get("/developers/me/skills")
+def my_skills(current_user: CurrentUser) -> dict:
+    """Per-category and per-model mastery ratings (ELO) for the current developer."""
+    if current_user.get("user_type") != "developer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer account required")
+    rows = fetch_all(
+        "SELECT dimension, key, rating FROM user_skill_ratings WHERE user_id = ? ORDER BY rating DESC",
+        (current_user["id"],),
+    )
+    return {
+        "category": [{"key": r["key"], "rating": r["rating"]} for r in rows if r["dimension"] == "category"],
+        "model": [{"key": r["key"], "rating": r["rating"]} for r in rows if r["dimension"] == "model"],
+    }
+
+
 @router.get("/developers/{username}")
 def get_public_profile(username: str) -> dict:
     """Get a developer's public profile."""

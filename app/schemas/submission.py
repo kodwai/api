@@ -51,6 +51,8 @@ class SubmissionResponse(BaseModel):
     score_breakdown: Optional[dict] = None
     celebration: Optional[dict] = None
     time_taken_ms: Optional[int] = None
+    turns: Optional[int] = None
+    total_tokens: Optional[int] = None
     started_at: str
     submitted_at: Optional[str] = None
     scored_at: Optional[str] = None

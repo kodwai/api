@@ -45,6 +45,38 @@ def update_rating(current_rating: int | None, difficulty: str | None, score: flo
     return max(100, round(r + k * (outcome - expected)))
 
 
+_EXPECTED_TURNS = {"easy": 6, "medium": 12, "hard": 20}
+
+
+def _trace_turns(agent_trace) -> int | None:
+    """Number of turns in a parsed agent trace dict. None if unavailable."""
+    if not isinstance(agent_trace, dict):
+        return None
+    turns = agent_trace.get("turns")
+    return len(turns) if isinstance(turns, list) else None
+
+
+def _trace_tokens(agent_trace) -> int | None:
+    if not isinstance(agent_trace, dict):
+        return None
+    tu = agent_trace.get("token_usage")
+    if isinstance(tu, dict):
+        total = (tu.get("input") or 0) + (tu.get("output") or 0)
+        return total or None
+    return None
+
+
+def efficiency_outcome(score: float | None, difficulty: str | None, turns: int | None) -> float:
+    """0..100 outcome rewarding high score with few turns vs the expected budget for the difficulty.
+    No turns info -> raw score (no efficiency signal)."""
+    s = max(0.0, min(100.0, score or 0.0))
+    if not turns or turns <= 0:
+        return s
+    expected = _EXPECTED_TURNS.get((difficulty or "").lower(), 12)
+    factor = min(1.0, expected / turns)
+    return max(0.0, min(100.0, (s / 100.0) * factor * 100.0))
+
+
 def _bump_skill_rating(user_id: str, dimension: str, key: str | None, difficulty: str | None, score: float | None) -> None:
     """Upsert a per-dimension mastery rating (ELO) for the given key (category or model)."""
     if not key:
@@ -388,9 +420,28 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
     # Weighted total score: easy=1x, medium=1.5x, hard=2x
     _prof = fetch_one("SELECT streak_days, last_submission_at FROM developer_profiles WHERE user_id = ?", (user_id,))
     new_streak = compute_streak(_prof.get("streak_days") if _prof else 0, _prof.get("last_submission_at") if _prof else None)
-    _cur = fetch_one("SELECT direction_rating FROM developer_profiles WHERE user_id = ?", (user_id,))
+    _cur = fetch_one("SELECT direction_rating, efficiency_rating FROM developer_profiles WHERE user_id = ?", (user_id,))
     _ch = fetch_one("SELECT difficulty, category FROM challenges WHERE id = ?", (challenge_id,))
     new_rating = update_rating(_cur.get("direction_rating") if _cur else 1000, _ch.get("difficulty") if _ch else None, overall)
+
+    # ── efficiency: economy of agent steering (turns/tokens) → rating (gamification v2) ──
+    _turns = None
+    new_efficiency = (_cur.get("efficiency_rating") if _cur else 1000)
+    try:
+        try:
+            _at = json.loads(submission["agent_trace"]) if submission.get("agent_trace") else None
+        except Exception:
+            _at = None
+        _turns = _trace_turns(_at)
+        _tokens = _trace_tokens(_at)
+        execute("UPDATE submissions SET turns = ?, total_tokens = ? WHERE id = ?",
+                (_turns, _tokens, submission["id"]))
+        _eff_cur = (_cur.get("efficiency_rating") if _cur else 1000)
+        _eff_out = efficiency_outcome(overall, (_ch.get("difficulty") if _ch else None), _turns)
+        new_efficiency = update_rating(_eff_cur, (_ch.get("difficulty") if _ch else None), _eff_out)
+    except Exception:
+        logger.exception("Efficiency rating update failed for user %s", user_id)
+
     execute(
         """UPDATE developer_profiles SET
               challenges_completed = (SELECT COUNT(DISTINCT challenge_id) FROM submissions WHERE user_id = ? AND status = 'scored'),
@@ -408,10 +459,11 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
               preferred_agent = ?,
               streak_days = ?,
               direction_rating = ?,
+              efficiency_rating = ?,
               last_submission_at = datetime('now'),
               updated_at = datetime('now')
            WHERE user_id = ?""",
-        (user_id, user_id, preferred_agent, new_streak, new_rating, user_id),
+        (user_id, user_id, preferred_agent, new_streak, new_rating, new_efficiency, user_id),
     )
 
     # ── per-category / per-model mastery ratings (KOD-79) ──

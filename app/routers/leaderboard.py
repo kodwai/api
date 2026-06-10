@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from app.core.database import fetch_all, fetch_one
 from app.core.deps import CurrentUser
 from app.services.model_registry import display_for_slug
+from app.services.tiers import tier_for
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
@@ -48,6 +49,7 @@ def global_leaderboard(
     rows = fetch_all(
         f"""SELECT
                 u.id, u.name, u.username, dp.preferred_agent, dp.streak_days,
+                dp.direction_rating,
                 COALESCE(scores.avg_score, 0) as total_score,
                 COALESCE(scores.challenge_count, 0) as challenges_completed
             FROM developer_profiles dp
@@ -75,6 +77,9 @@ def global_leaderboard(
         row["rank"] = offset + i + 1
         if agent:
             row["preferred_agent"] = agent
+        direction_rating = row.get("direction_rating")
+        row["direction_rating"] = direction_rating if direction_rating is not None else 1000
+        row["tier"] = tier_for(direction_rating)
 
     # Count total
     count_where = sub_where.replace("sub.", "s.")

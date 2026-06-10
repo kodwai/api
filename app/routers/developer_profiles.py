@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.core.database import execute, fetch_all, fetch_one
 from app.core.deps import CurrentUser
 from app.services.feature_flags import require_flag
+from app.services.tiers import tier_for
 
 router = APIRouter(tags=["developers"])
 
@@ -53,6 +54,8 @@ def get_my_profile(current_user: CurrentUser) -> dict:
         (current_user["id"],),
     )
     profile["recent_submissions"] = submissions
+
+    profile["tier"] = tier_for(profile.get("direction_rating"))
 
     return profile
 
@@ -193,6 +196,8 @@ def get_public_profile(username: str) -> dict:
         (profile["user_id"],),
     )
     profile["badges"] = badges
+
+    profile["tier"] = tier_for(profile.get("direction_rating"))
 
     return profile
 

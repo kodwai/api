@@ -56,6 +56,7 @@ def get_my_profile(current_user: CurrentUser) -> dict:
     profile["recent_submissions"] = submissions
 
     profile["tier"] = tier_for(profile.get("direction_rating"))
+    profile["efficiency_rating"] = profile.get("efficiency_rating") or 1000
 
     return profile
 
@@ -115,7 +116,7 @@ def my_wrapped(current_user: CurrentUser) -> dict:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer account required")
     uid = current_user["id"]
     profile = fetch_one(
-        "SELECT total_score, challenges_completed, rank, streak_days, direction_rating "
+        "SELECT total_score, challenges_completed, rank, streak_days, direction_rating, efficiency_rating "
         "FROM developer_profiles WHERE user_id = ?",
         (uid,),
     ) or {}
@@ -149,6 +150,7 @@ def my_wrapped(current_user: CurrentUser) -> dict:
         "submissions": agg.get("submissions") or 0,
         "best_score": agg.get("best_score"),
         "direction_rating": profile.get("direction_rating") or 1000,
+        "efficiency_rating": profile.get("efficiency_rating") or 1000,
         "streak_days": profile.get("streak_days") or 0,
         "rank": profile.get("rank"),
         "badges_count": badges.get("c") or 0,
@@ -198,6 +200,7 @@ def get_public_profile(username: str) -> dict:
     profile["badges"] = badges
 
     profile["tier"] = tier_for(profile.get("direction_rating"))
+    profile["efficiency_rating"] = profile.get("efficiency_rating") or 1000
 
     return profile
 

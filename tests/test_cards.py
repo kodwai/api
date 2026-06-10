@@ -56,3 +56,17 @@ def test_developer_card_cache_header(client: TestClient) -> None:
 def test_developer_card_unknown_username_404(client: TestClient) -> None:
     resp = client.get("/api/developers/nope-does-not-exist/card.svg")
     assert resp.status_code == 404
+
+
+def test_developer_card_themes(client: TestClient) -> None:
+    username = _create_developer(client, "themedev@test.com", "Theme Dev", 1200)
+    for theme in ("dark", "light", "gradient"):
+        resp = client.get(f"/api/developers/{username}/card.svg?theme={theme}")
+        assert resp.status_code == 200, theme
+        assert resp.headers["content-type"].startswith("image/svg+xml")
+        body = resp.text
+        assert "<svg" in body and f"@{username}" in body and "DIRECTION RATING" in body
+    # invalid theme falls back to a valid card (default dark)
+    resp = client.get(f"/api/developers/{username}/card.svg?theme=bogus")
+    assert resp.status_code == 200
+    assert "<svg" in resp.text

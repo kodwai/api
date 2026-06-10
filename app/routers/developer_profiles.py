@@ -10,6 +10,7 @@ from app.core.database import execute, fetch_all, fetch_one
 from app.core.deps import CurrentUser
 from app.services.feature_flags import require_flag
 from app.services.tiers import tier_for
+from app.services.xp import compute_total_xp, level_for
 
 router = APIRouter(tags=["developers"])
 
@@ -57,6 +58,10 @@ def get_my_profile(current_user: CurrentUser) -> dict:
 
     profile["tier"] = tier_for(profile.get("direction_rating"))
     profile["efficiency_rating"] = profile.get("efficiency_rating") or 1000
+
+    _xp = compute_total_xp(current_user["id"])
+    profile["xp"] = _xp
+    profile["level"] = level_for(_xp)
 
     return profile
 
@@ -202,7 +207,23 @@ def get_public_profile(username: str) -> dict:
     profile["tier"] = tier_for(profile.get("direction_rating"))
     profile["efficiency_rating"] = profile.get("efficiency_rating") or 1000
 
+    _xp = compute_total_xp(profile["user_id"])
+    profile["xp"] = _xp
+    profile["level"] = level_for(_xp)
+
     return profile
+
+
+@router.get("/developers/{username}/skills")
+def public_skills(username: str) -> dict:
+    u = fetch_one("SELECT id FROM users WHERE username = ?", (username,))
+    if not u:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Developer not found")
+    rows = fetch_all("SELECT dimension, key, rating FROM user_skill_ratings WHERE user_id = ? ORDER BY rating DESC", (u["id"],))
+    return {
+        "category": [{"key": r["key"], "rating": r["rating"]} for r in rows if r["dimension"] == "category"],
+        "model": [{"key": r["key"], "rating": r["rating"]} for r in rows if r["dimension"] == "model"],
+    }
 
 
 @router.get("/developers/{username}/submissions")

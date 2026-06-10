@@ -96,6 +96,7 @@ from app.routers.admin import badges as admin_badges, api_keys as admin_api_keys
 from app.routers.admin import blog as admin_blog, blog_images as admin_blog_images
 from app.routers.admin import events as admin_events
 from app.routers.admin import feature_flags as admin_feature_flags
+from app.routers.admin import gamification as admin_gamification
 app.include_router(admin_auth.router, prefix="/api/admin")
 app.include_router(admin_dashboard.router, prefix="/api/admin")
 app.include_router(admin_users.router, prefix="/api/admin")
@@ -114,6 +115,7 @@ app.include_router(admin_blog.router, prefix="/api/admin")
 app.include_router(admin_blog_images.router, prefix="/api/admin")
 app.include_router(admin_events.router, prefix="/api/admin")
 app.include_router(admin_feature_flags.router, prefix="/api/admin")
+app.include_router(admin_gamification.router, prefix="/api/admin")
 
 
 @app.get("/api/health")

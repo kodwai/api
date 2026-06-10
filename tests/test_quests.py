@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from app.services.quests import _window, period_key, get_quest, QUESTS
+from app.services.quests import _window, period_key, get_quest, load_quests
 
 NOW = datetime(2026, 6, 10, 15, 0, 0, tzinfo=timezone.utc)  # Wednesday
 
@@ -22,7 +22,8 @@ def test_weekly_window():
 
 
 def test_quest_registry():
-    assert len(QUESTS) == 4
+    """DB-backed: migration 036 seeds the quests table (fresh_db fixture is autouse)."""
+    assert len(load_quests()) == 4
     assert get_quest("daily_solve")["reward_xp"] == 50
     assert get_quest("nope") is None
     assert period_key(get_quest("daily_solve"), NOW) == "2026-06-10"

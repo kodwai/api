@@ -3,14 +3,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
 from app.core.database import execute, fetch_one
 from app.core.deps import CurrentUser
-from app.services.quests import QUESTS, quest_progress, period_key, get_quest
+from app.services.quests import load_quests, quest_progress, period_key, get_quest
 
 router = APIRouter(prefix="/quests", tags=["quests"])
 
 @router.get("")
 def list_quests(current_user: CurrentUser) -> list[dict]:
     uid = current_user["id"]; now = datetime.now(timezone.utc); out = []
-    for q in QUESTS:
+    for q in load_quests():
         pk = period_key(q, now)
         cur = quest_progress(uid, q, now)
         claimed = fetch_one("SELECT 1 FROM quest_claims WHERE user_id=? AND quest_key=? AND period_key=?", (uid, q["key"], pk)) is not None

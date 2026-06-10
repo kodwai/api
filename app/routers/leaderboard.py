@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from app.core.database import fetch_all, fetch_one
 from app.core.deps import CurrentUser
 from app.services.model_registry import display_for_slug
-from app.services.tiers import tier_for
+from app.services.tiers import tier_for, load_tiers
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
@@ -73,13 +73,14 @@ def global_leaderboard(
         tuple(sub_params + [limit, offset]),
     )
 
+    tiers = load_tiers()
     for i, row in enumerate(rows):
         row["rank"] = offset + i + 1
         if agent:
             row["preferred_agent"] = agent
         direction_rating = row.get("direction_rating")
         row["direction_rating"] = direction_rating if direction_rating is not None else 1000
-        row["tier"] = tier_for(direction_rating)
+        row["tier"] = tier_for(direction_rating, tiers)
 
     # Count total
     count_where = sub_where.replace("sub.", "s.")

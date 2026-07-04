@@ -1,0 +1,37 @@
+name: operator-scoring-ci
+
+on:
+  push:
+    paths:
+      - "api/app/operator_scoring/**"
+      - "api/tests/operator_scoring/**"
+  pull_request:
+    paths:
+      - "api/app/operator_scoring/**"
+      - "api/tests/operator_scoring/**"
+
+jobs:
+  operator-scoring:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check app/operator_scoring tests/operator_scoring
+
+      - name: Mypy
+        run: mypy app/operator_scoring
+
+      - name: Pytest
+        run: pytest tests/operator_scoring

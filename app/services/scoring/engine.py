@@ -12,6 +12,10 @@ from app.services.scoring.config import resolve_config
 from app.services.scoring.llm import LLMJudge
 from app.services.scoring.models import AxisResult, ScoreBreakdown, ScoringContext
 from app.services.scoring.registry import get_signal
+from app.services.operator_scoring_adapter import (
+    operator_baseline_lift,
+    recompute_user_ability,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,19 +337,46 @@ def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
     else:
         leaderboard_eligible = ctx.judgment is not None and len(ctx.judgment) > 0
 
-    # Static baseline_lift badge (does not change the headline score in v1).
-    # ai_baseline is on a 0-100 scale; normalize outcome axis score (raw points) to 0-100 before comparing.
-    baseline = ctx.challenge.get("ai_baseline")
+    # ── baseline_lift badge ──
+    # Prefer the operator (Layer-E) normalized lift when the challenge carries
+    # calibrated item params (operator_item_params row); otherwise fall back to
+    # the legacy static ai_baseline badge. Never changes the headline `overall`.
     baseline_lift = None
-    if baseline is not None:
-        outcome_axis = next((a for a in axes if a.name == "outcome"), None)
-        artifact = (outcome_axis.score / outcome_axis.points * 100) if (outcome_axis and outcome_axis.points) else 0.0
-        delta = round(max(0.0, artifact - float(baseline)), 2)
-        baseline_lift = {"beat": artifact > float(baseline), "delta": delta}
+    operator_l: float | None = None
+    operator_s: float | None = None
+
+    # O_norm from the outcome axis (or the challenge_rubric axis in bespoke mode).
+    o_axis = (next((a for a in axes if a.name == "outcome"), None)
+              or next((a for a in axes if a.name == "challenge_rubric"), None))
+    o_norm = (o_axis.score / o_axis.points) if (o_axis and o_axis.points) else 0.0
+
+    badge = None
+    try:
+        badge = operator_baseline_lift(
+            ctx.challenge.get("id"), o_norm, ctx.challenge.get("ai_baseline")
+        )
+    except Exception:
+        logger.exception("operator_baseline_lift failed for challenge %s", ctx.challenge.get("id"))
+
+    if badge is not None:
+        baseline_lift = badge.to_badge_dict()
+        operator_l = badge.L
+        operator_s = badge.s
+    else:
+        # Legacy static baseline_lift badge (unchanged from v1). ai_baseline is on
+        # a 0-100 scale; normalize the outcome axis score (raw points) to 0-100.
+        baseline = ctx.challenge.get("ai_baseline")
+        if baseline is not None:
+            outcome_axis = next((a for a in axes if a.name == "outcome"), None)
+            artifact = (outcome_axis.score / outcome_axis.points * 100) if (outcome_axis and outcome_axis.points) else 0.0
+            delta = round(max(0.0, artifact - float(baseline)), 2)
+            baseline_lift = {"beat": artifact > float(baseline), "delta": delta}
 
     overall = min(round(overall, 1), 100.0)
     breakdown = ScoreBreakdown(SCORING_VERSION, overall, axes,
                                leaderboard_eligible=leaderboard_eligible, baseline_lift=baseline_lift)
+    breakdown.operator_l = operator_l
+    breakdown.operator_s = operator_s
     breakdown.trace_quality = (ctx.agent_trace or {}).get("trace_quality")
     breakdown.confidence = _trace_confidence(ctx)
     # Distinguish "no API key" from "key present but the AI judge failed", so the
@@ -383,9 +414,10 @@ def _run(submission_id: str) -> None:
 
     execute(
         """UPDATE submissions SET status='scored', score=?, score_breakdown=?,
-              leaderboard_eligible=?, scoring_version=?, scored_at=datetime('now'),
-              updated_at=datetime('now') WHERE id=?""",
-        (overall, json.dumps(breakdown.to_json()), eligible, SCORING_VERSION, submission_id),
+              leaderboard_eligible=?, scoring_version=?, operator_l=?, operator_s=?,
+              scored_at=datetime('now'), updated_at=datetime('now') WHERE id=?""",
+        (overall, json.dumps(breakdown.to_json()), eligible, SCORING_VERSION,
+         breakdown.operator_l, breakdown.operator_s, submission_id),
     )
     _apply_side_effects(submission, overall, eligible)
     logger.info("Scored %s: %.1f (eligible=%s, version=%s)", submission_id, overall, eligible, SCORING_VERSION)
@@ -472,6 +504,21 @@ def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: 
         _bump_skill_rating(user_id, "model", submission.get("model"), (_ch.get("difficulty") if _ch else None), overall)
     except Exception:
         logger.exception("Skill rating update failed for user %s", user_id)
+
+    # ── operator scoring: Layer-D ability estimate (theta_hat +/- SE) ──
+    # Additive and non-breaking: only fires when the user has >=1 scored item
+    # carrying a full-precision operator_l (i.e. a calibrated challenge).
+    try:
+        ability = recompute_user_ability(user_id)
+        if ability is not None:
+            execute(
+                """UPDATE developer_profiles SET
+                      ability_theta = ?, ability_se = ?, ability_updated_at = datetime('now')
+                   WHERE user_id = ?""",
+                (ability.theta_hat, ability.se, user_id),
+            )
+    except Exception:
+        logger.exception("Operator ability update failed for user %s", user_id)
 
     # ── recompute global ranks ──
     _recompute_ranks()

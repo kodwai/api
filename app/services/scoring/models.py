@@ -35,6 +35,11 @@ class ScoreBreakdown:
     # None (eligible), "no_api_key" (user has no Anthropic key), or
     # "scoring_error" (key present but the AI judge call/parse failed).
     ineligible_reason: Optional[str] = None
+    # Full-precision Layer-E operator-scoring outputs for this submission. These
+    # are persisted to submissions.operator_l/operator_s and re-fed into Layer D
+    # to estimate ability. They are intentionally NOT emitted by to_json().
+    operator_l: Optional[float] = None
+    operator_s: Optional[float] = None
 
     def to_json(self) -> dict:
         return {

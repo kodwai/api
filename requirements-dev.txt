@@ -1,0 +1,7 @@
+# Dev + CI tooling for the operator scoring core.
+# numpy is pinned to the runtime version so the acceptance oracle reproduces bit-for-bit.
+numpy==2.1.1
+pytest>=9
+ruff>=0.6
+mypy>=1.11
+# hypothesis>=6.100  # optional; property tests must not import it

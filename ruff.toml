@@ -1,0 +1,14 @@
+# Ruff config scoped to the operator scoring core + its tests. The rest of api/
+# is not yet clean, so CI passes explicit path targets rather than linting all of
+# api/ (see .github/workflows/operator-scoring-ci.yml).
+line-length = 100
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "NPY"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Tests use plain module-level test_* functions and local sample fixtures; the
+# bugbear/simplify heuristics that flag those patterns do not apply.
+"tests/**" = ["B011", "SIM117"]

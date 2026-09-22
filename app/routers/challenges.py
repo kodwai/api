@@ -9,7 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import execute, fetch_all, fetch_one
-from app.core.deps import AdminUser, CurrentUser
+from app.core.admin_deps import AdminUser
+from app.core.deps import CurrentUser
 from app.services.scoring.config import build_rubric
 from app.schemas.challenge import (
     CategoryCount,

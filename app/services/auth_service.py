@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -12,8 +13,10 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.database import execute, fetch_one
 from app.core.security import create_access_token, hash_password, verify_password
+from app.services import email_templates
+from app.services.analytics_events import capture
 from app.services.default_projects import seed_for_organization
-from app.services.email_service import send_password_reset_email, send_verification_email
+from app.services.email_service import send_password_reset_email, send_tracked_in_background
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +64,72 @@ def has_welcomed(user: dict[str, Any]) -> bool:
     return bool(row and row["welcomed_at"])
 
 
-def mark_welcomed(user_id: str) -> None:
-    """Record that a developer has seen the welcome intro (idempotent — set once)."""
+def mark_welcomed(
+    user_id: str,
+    acquisition_source: str | None = None,
+    acquisition_prompt: str | None = None,
+) -> None:
+    """Record that a developer has seen the welcome intro (idempotent — set once).
+
+    The optional "How did you find Kodwai?" answer is stored when given; a later answer replaces
+    an earlier one. Company accounts have no developer profile, so nothing is written for them.
+    """
     execute(
         "UPDATE developer_profiles SET welcomed_at = datetime('now'), updated_at = datetime('now') "
         "WHERE user_id = ? AND welcomed_at IS NULL",
         (user_id,),
     )
+    if acquisition_source:
+        execute(
+            "UPDATE developer_profiles SET acquisition_source = ?, acquisition_prompt = ?, updated_at = datetime('now') "
+            "WHERE user_id = ?",
+            (acquisition_source, acquisition_prompt or None, user_id),
+        )
+
+
+VERIFY_RESEND_WINDOW_MINUTES = 10
+
+
+def _send_verification(user_id: str, email: str, name: str | None, token: str, client_url: str, dedupe_key: str) -> None:
+    """Email the verification link through the tracked transactional path (non-blocking).
+
+    Same sender and link as before (EMAIL_FROM_TRANSACTIONAL, {client_url}/verify?token=...); the
+    email_sends row is what rate-limits resend-verification.
+    """
+    rendered = email_templates.verify_email(name=name, verify_url=f"{client_url}/verify?token={token}")
+    send_tracked_in_background(
+        user_id, email, "verify_email", rendered.subject, rendered.html, rendered.text, "transactional", dedupe_key,
+    )
+
+
+def resend_verification(email: str, client_url: str = "") -> None:
+    """Re-send the verification link. Silent on unknown, verified or banned accounts.
+
+    Rate limit: at most one verification email per address per 10 minutes, looked up in
+    email_sends; the 10-minute bucket in the dedupe key also stops two concurrent requests.
+    """
+    user = fetch_one(
+        "SELECT id, email, name, email_verified, email_verification_token, is_banned FROM users WHERE email = ?",
+        (email,),
+    )
+    if user is None or user["email_verified"] or user["is_banned"]:
+        return
+    recent = fetch_one(
+        """SELECT 1 FROM email_sends
+           WHERE (user_id = ? OR lower(to_email) = lower(?))
+             AND template IN ('verify_email', 'verify_reminder') AND status IN ('sent', 'claimed')
+             AND julianday(created_at) > julianday('now', ?)
+           LIMIT 1""",
+        (user["id"], user["email"], f"-{VERIFY_RESEND_WINDOW_MINUTES} minutes"),
+    )
+    if recent:
+        return
+    token = user["email_verification_token"]
+    if not token:
+        token = secrets.token_hex(32)
+        execute("UPDATE users SET email_verification_token = ? WHERE id = ?", (token, user["id"]))
+    bucket = int(time.time() // (VERIFY_RESEND_WINDOW_MINUTES * 60))
+    _send_verification(user["id"], user["email"], user["name"], token, client_url, f"verify_email:{user['id']}:{bucket}")
 
 
 def signup(
@@ -77,8 +139,13 @@ def signup(
     user_type: str = "company",
     organization_name: str | None = None,
     client_url: str = "",
+    marketing_consent: bool = False,
 ) -> dict[str, Any]:
-    """Register a new user. Company users get an organization; developer users do not."""
+    """Register a new user. Company users get an organization; developer users do not.
+
+    marketing_consent comes from the unchecked "product news" box at signup and sets
+    users.marketing_consent_at. Onboarding email does not depend on it.
+    """
     # Check if email already taken
     existing = fetch_one("SELECT id FROM users WHERE email = ?", (email,))
     if existing:
@@ -124,10 +191,18 @@ def signup(
             (profile_id, user_id),
         )
 
-    # Send verification email
-    send_verification_email(email, email_verification_token, client_url)
+    if marketing_consent:
+        execute("UPDATE users SET marketing_consent_at = datetime('now') WHERE id = ?", (user_id,))
 
-    return {"message": "Account created. Please check your email to verify your account."}
+    # Send verification email
+    _send_verification(user_id, email, name, email_verification_token, client_url, f"verify_email:{user_id}:signup")
+    capture(user_id, "signup_completed", {"method": "email", "user_type": user_type})
+
+    return {
+        "message": "Account created. Please check your email to verify your account.",
+        # Lets the web app identify the new account in analytics with the same id the API uses.
+        "user": {"id": user_id, "user_type": user_type},
+    }
 
 
 def login(email: str, password: str) -> dict[str, Any]:
@@ -146,7 +221,8 @@ def login(email: str, password: str) -> dict[str, Any]:
             detail="Invalid email or password",
         )
 
-    if not verify_password(password, user["password_hash"]):
+    # GitHub-only accounts have an empty password_hash, which bcrypt rejects with an error (500).
+    if not user["password_hash"] or not verify_password(password, user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -265,6 +341,7 @@ def exchange_cli_auth_code(code: str) -> dict[str, Any]:
     access_token = create_access_token({"sub": user["id"]})
     user_response = {k: v for k, v in user.items() if k not in ("is_banned", "banned_reason")}
     user_response["has_claude_api_key"] = has_claude_api_key(user_response)
+    capture(user["id"], "cli_login")
     return {"access_token": access_token, "user": user_response}
 
 
@@ -353,6 +430,9 @@ def verify_email(token: str) -> dict[str, Any]:
         "UPDATE users SET email_verified = 1, email_verification_token = NULL WHERE id = ?",
         (user["id"],),
     )
+    # The token is single-use, so this runs once per account. No-op while lifecycle_emails is off.
+    from app.services import lifecycle
+    lifecycle.trigger_welcome(user["id"])
 
     updated_user = fetch_one(
         "SELECT id, email, name, role, organization_id, user_type, username, email_verified, created_at FROM users WHERE id = ?",
@@ -440,7 +520,7 @@ def _github_login_inner(code: str) -> dict[str, Any]:
         access_token = create_access_token({"sub": existing["id"]})
         user_response = {k: v for k, v in existing.items() if k not in ("password_hash", "is_banned", "banned_reason")}
         user_response["has_claude_api_key"] = has_claude_api_key(user_response)
-        return {"access_token": access_token, "user": user_response}
+        return {"access_token": access_token, "user": user_response, "is_new_user": False}
 
     # Check if email matches existing account — link GitHub
     existing_by_email = fetch_one(
@@ -460,7 +540,7 @@ def _github_login_inner(code: str) -> dict[str, Any]:
         user_response = {k: v for k, v in existing_by_email.items() if k not in ("password_hash", "is_banned", "banned_reason")}
         user_response["email_verified"] = 1
         user_response["has_claude_api_key"] = has_claude_api_key(user_response)
-        return {"access_token": access_token, "user": user_response}
+        return {"access_token": access_token, "user": user_response, "is_new_user": False}
 
     # New user — create developer account
     user_id = secrets.token_hex(16)
@@ -487,6 +567,10 @@ def _github_login_inner(code: str) -> dict[str, Any]:
     )
 
     logger.info("New GitHub OAuth user created: %s (%s)", username, gh_email)
+    capture(user_id, "signup_completed", {"method": "github", "user_type": "developer"})
+    # GitHub accounts arrive verified, so the welcome goes now. No-op while lifecycle_emails is off.
+    from app.services import lifecycle
+    lifecycle.trigger_welcome(user_id)
 
     user = fetch_one(
         "SELECT id, email, name, role, organization_id, user_type, username, email_verified, created_at FROM users WHERE id = ?",
@@ -495,4 +579,4 @@ def _github_login_inner(code: str) -> dict[str, Any]:
     if user is not None:
         user["has_claude_api_key"] = False
     access_token = create_access_token({"sub": user_id})
-    return {"access_token": access_token, "user": user}
+    return {"access_token": access_token, "user": user, "is_new_user": True}

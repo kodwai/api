@@ -127,8 +127,13 @@ def run_migrations() -> None:
                 except (ValueError, Exception) as e:
                     err_msg = str(e).lower()
                     # Skip "duplicate column" or "already exists" errors for idempotency
-                    if "duplicate column" in err_msg or "already exists" in err_msg or "cannot add" in err_msg:
+                    if "duplicate column" in err_msg or "already exists" in err_msg:
                         logger.warning("Skipping statement in %s (already applied): %s", migration_file.name, err_msg[:100])
+                        continue
+                    # "Cannot add ..." (inline UNIQUE, non-constant default on ADD COLUMN) means the
+                    # column was NOT created. Still skipped so startup survives, but logged loudly.
+                    if "cannot add" in err_msg:
+                        logger.error("Statement NOT applied in %s (column not created): %s", migration_file.name, err_msg[:200])
                         continue
                     raise
         conn.execute("INSERT OR IGNORE INTO _migrations (name) VALUES (?)", (migration_file.name,))
@@ -185,3 +190,21 @@ def execute(query: str, params: tuple[Any, ...] = ()) -> None:
         conn.execute(query, params)
         conn.commit()
     _execute_with_retry(_run)
+
+
+def execute_returning(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    """Execute a write query with a RETURNING clause, commit, and return the returned rows as dicts.
+
+    Powers claim-then-send: ``INSERT ... ON CONFLICT DO NOTHING RETURNING id`` yields one row when
+    this call won the claim and an empty list when the key already existed. On a stream error the
+    statement is re-run once after reconnecting; if the first attempt had already committed, the
+    retry sees the conflict and returns [] (the safe outcome: nothing is sent twice).
+    """
+    def _run():
+        conn = get_connection()
+        cursor = conn.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [description[0] for description in cursor.description] if cursor.description else []
+        conn.commit()
+        return [dict(zip(columns, row)) for row in rows]
+    return _execute_with_retry(_run)

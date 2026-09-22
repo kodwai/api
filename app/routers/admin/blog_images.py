@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.admin_deps import AdminUser
+from app.core.automation_deps import require_scope
 from app.core.config import settings
 from app.core.database import execute, fetch_all, fetch_one
 
@@ -14,12 +16,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin-blog-images"])
 
+# Upload and list accept a superadmin JWT or an automation token with blog:write (cover images
+# for routine drafts). Deleting stays superadmin-JWT only.
+BlogWriter = Annotated[dict[str, Any], Depends(require_scope("blog:write"))]
+
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 MAX_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 @router.post("/blog/images", status_code=201)
-async def upload_image(file: UploadFile, current_admin: AdminUser) -> dict:
+async def upload_image(file: UploadFile, current_admin: BlogWriter) -> dict:
     """Upload an image to Vercel Blob storage."""
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
@@ -66,7 +72,7 @@ async def upload_image(file: UploadFile, current_admin: AdminUser) -> dict:
 
 
 @router.get("/blog/images")
-def list_images(current_admin: AdminUser) -> list[dict]:
+def list_images(current_admin: BlogWriter) -> list[dict]:
     """List all uploaded blog images."""
     return fetch_all("SELECT * FROM blog_images ORDER BY created_at DESC", ())
 

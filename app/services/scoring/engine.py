@@ -421,6 +421,24 @@ def _run(submission_id: str) -> None:
     )
     _apply_side_effects(submission, overall, eligible)
     logger.info("Scored %s: %.1f (eligible=%s, version=%s)", submission_id, overall, eligible, SCORING_VERSION)
+    _after_scored(submission, challenge, overall, eligible)
+
+
+def _after_scored(submission: dict, challenge: dict, overall: float, leaderboard_eligible: int) -> None:
+    """Growth hooks once a submission is scored: the server-side PostHog event and the
+    first_score milestone email (a no-op while the lifecycle_emails flag is off). Never raises."""
+    try:
+        from app.services.analytics_events import capture
+        capture(submission["user_id"], "submission_scored", {
+            "submission_id": submission["id"],
+            "challenge_slug": challenge.get("slug"),
+            "score": overall,
+            "leaderboard_eligible": bool(leaderboard_eligible),
+        })
+        from app.services import lifecycle
+        lifecycle.on_submission_scored(submission["user_id"], bool(leaderboard_eligible))
+    except Exception:
+        logger.exception("Post-scoring hooks failed for submission %s", submission.get("id"))
 
 
 def _apply_side_effects(submission: dict, overall: float, leaderboard_eligible: int) -> None:

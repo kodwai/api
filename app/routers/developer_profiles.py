@@ -14,6 +14,10 @@ from app.services.xp import compute_total_xp, level_for
 
 router = APIRouter(tags=["developers"])
 
+# developer_profiles columns that are private to the account owner: never in a public profile.
+# acquisition_* is the self-reported "How did you find Kodwai?" answer from /dev/welcome.
+_PRIVATE_PROFILE_FIELDS = ("acquisition_source", "acquisition_prompt", "free_submissions_used", "welcomed_at")
+
 
 def pick_favorite(rows: list[dict], key_field: str) -> str | None:
     """Highest-count non-empty value of key_field across pre-aggregated rows [{key_field, count}]."""
@@ -74,6 +78,8 @@ class ProfileUpdateRequest(BaseModel):
     x_url: Optional[str] = None
     skills: Optional[list[str]] = None
     preferred_agent: Optional[str] = None
+    # Opt-in: let search engines index the public profile (default off; profiles emit noindex).
+    search_indexable: Optional[bool] = None
 
 
 @router.put("/developers/me")
@@ -88,6 +94,8 @@ def update_my_profile(body: ProfileUpdateRequest, current_user: CurrentUser) -> 
     for field, value in body.model_dump(exclude_unset=True).items():
         if field == "skills" and value is not None:
             value = json.dumps(value)
+        if field == "search_indexable":
+            value = 1 if value else 0
         updates.append(f"{field} = ?")
         params.append(value)
 
@@ -178,6 +186,9 @@ def get_public_profile(username: str) -> dict:
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Developer not found")
 
+    for field in _PRIVATE_PROFILE_FIELDS:
+        profile.pop(field, None)
+    profile["search_indexable"] = bool(profile.get("search_indexable"))
     profile["skills"] = json.loads(profile["skills"]) if profile.get("skills") else []
 
     # Get recent submissions (public)

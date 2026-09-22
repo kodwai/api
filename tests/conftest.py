@@ -22,6 +22,16 @@ os.environ.update({
     # Tests that exercise the free tier monkeypatch this to a dummy value.
     "PLATFORM_ANTHROPIC_API_KEY": "",
     "FREE_SUBMISSION_LIMIT": "3",
+    # Growth/email config: never inherit real values from .env, so tests stay offline
+    # (no PostHog capture, no IndexNow ping) and lifecycle sends refuse unless a test opts in.
+    "POSTHOG_PROJECT_KEY": "",
+    "INDEXNOW_KEY": "",
+    "EMAIL_REPLY_TO": "",
+    "UNSUBSCRIBE_SECRET": "test-unsubscribe-secret",
+    "RESEND_WEBHOOK_SECRET": "",
+    "INTERNAL_EMAILS": "",
+    # Never report test errors (including deliberate failure-path tests) to the real Sentry project.
+    "SENTRY_DSN": "",
 })
 
 from app.core.database import connect, disconnect, run_migrations, get_connection, execute, fetch_one

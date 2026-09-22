@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class SignupRequest(BaseModel):
@@ -12,6 +13,8 @@ class SignupRequest(BaseModel):
     user_type: Literal["developer", "company"] = "company"
     # Company-only
     organization_name: Optional[str] = Field(default=None, max_length=255)
+    # The unchecked "product news" box. Sets users.marketing_consent_at; onboarding mail ignores it.
+    marketing_consent: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +28,46 @@ class GitHubCallbackRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
+
+
+class ResendVerificationRequest(BaseModel):
+    # A plain string, not EmailStr: the route answers 204 for anything, including a malformed
+    # address, so the response never says whether the input was even plausible.
+    email: str = Field(..., max_length=320)
+
+
+_ACQUISITION_SOURCE = re.compile(r"^[a-z0-9_-]{1,40}$")
+ACQUISITION_PROMPT_MAX_LENGTH = 500
+
+
+class WelcomeRequest(BaseModel):
+    """Optional body for /auth/me/welcome: the "How did you find Kodwai?" answer."""
+    # A short slug from the welcome page's list (chatgpt, google, friend, other...).
+    acquisition_source: Optional[str] = None
+    # Free text: what the developer asked the AI assistant that recommended kodwai.
+    acquisition_prompt: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("acquisition_source")
+    @classmethod
+    def _source(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip().lower()
+        if not value:
+            return None
+        if not _ACQUISITION_SOURCE.match(value):
+            raise ValueError("acquisition_source must be 1 to 40 lowercase letters, digits, - or _")
+        return value
+
+    @field_validator("acquisition_prompt")
+    @classmethod
+    def _prompt(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.replace("\x00", "").strip()
+        if len(value) > ACQUISITION_PROMPT_MAX_LENGTH:
+            raise ValueError(f"acquisition_prompt must be at most {ACQUISITION_PROMPT_MAX_LENGTH} characters")
+        return value or None
 
 
 class ResetPasswordRequest(BaseModel):

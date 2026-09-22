@@ -48,8 +48,10 @@ def _row_to_list_response(row: dict) -> ChallengeListResponse:
 
 
 def _get_challenge_or_404(id_or_slug: str) -> dict:
+    """A published challenge by id or slug. Drafts (is_public = 0) 404, so the public detail and
+    rubric routes (and the landing pages rendered from them) never expose them."""
     challenge = fetch_one(
-        """SELECT * FROM challenges WHERE id = ? OR slug = ?""",
+        """SELECT * FROM challenges WHERE (id = ? OR slug = ?) AND is_public = 1""",
         (id_or_slug, id_or_slug),
     )
     if challenge is None:

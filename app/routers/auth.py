@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query
 from fastapi.responses import RedirectResponse
+from pydantic import EmailStr, TypeAdapter, ValidationError
 
 from app.core.config import settings
 from app.core.deps import CurrentUser
@@ -14,15 +15,19 @@ from app.schemas.auth import (
     GitHubCallbackRequest,
     LoginRequest,
     PasswordUpdateRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
     TokenResponse,
-    UserResponse,
     UsernameUpdateRequest,
+    UserResponse,
+    WelcomeRequest,
 )
 from app.services import auth_service, entitlement_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 
 def _user_response(user: dict) -> UserResponse:
@@ -49,6 +54,7 @@ def signup(body: SignupRequest) -> dict:
         user_type=body.user_type,
         organization_name=body.organization_name,
         client_url=settings.CLIENT_URL,
+        marketing_consent=body.marketing_consent,
     )
     return result
 
@@ -78,10 +84,18 @@ def get_me(current_user: CurrentUser) -> UserResponse:
     return _user_response(current_user)
 
 
-@router.post("/me/welcome", status_code=204)
-def mark_welcome(current_user: CurrentUser):
-    """Mark the first-login welcome intro as seen for the current developer."""
-    auth_service.mark_welcomed(current_user["id"])
+@router.api_route("/me/welcome", methods=["POST", "PATCH"], status_code=204)
+def mark_welcome(current_user: CurrentUser, body: WelcomeRequest | None = None):
+    """Mark the first-login welcome intro as seen for the current developer.
+
+    Optionally stores the "How did you find Kodwai?" answer (acquisition_source, and
+    acquisition_prompt when an AI assistant recommended us). The body may be empty.
+    """
+    auth_service.mark_welcomed(
+        current_user["id"],
+        acquisition_source=body.acquisition_source if body else None,
+        acquisition_prompt=body.acquisition_prompt if body else None,
+    )
     return None
 
 
@@ -102,6 +116,18 @@ def update_password(body: PasswordUpdateRequest, current_user: CurrentUser):
 def forgot_password(body: ForgotPasswordRequest):
     """Issue a password reset token and email it. Always returns 204 to avoid account enumeration."""
     auth_service.request_password_reset(email=body.email, client_url=settings.CLIENT_URL)
+    return None
+
+
+@router.post("/resend-verification", status_code=204)
+def resend_verification(body: ResendVerificationRequest):
+    """Re-send the verification link. Always 204 (no account enumeration); at most one
+    verification email per address per 10 minutes."""
+    try:
+        email = _EMAIL_ADAPTER.validate_python(body.email.strip())
+    except ValidationError:
+        return None
+    auth_service.resend_verification(email=email, client_url=settings.CLIENT_URL)
     return None
 
 

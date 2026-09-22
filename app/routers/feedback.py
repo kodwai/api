@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import logging
 import secrets
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from app.core.database import execute, fetch_all, fetch_one
 from app.core.deps import CurrentUser
@@ -13,6 +14,9 @@ from app.schemas.feedback import (
     PlatformFeedbackCreate,
     PlatformFeedbackResponse,
 )
+from app.services import feedback_emails
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["feedback"])
 
@@ -20,6 +24,19 @@ router = APIRouter(tags=["feedback"])
 def _require_developer(user: dict) -> None:
     if user.get("user_type") != "developer":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer account required")
+
+
+def _queue_acknowledgment(background_tasks: BackgroundTasks, kind: str, feedback_id: str) -> None:
+    """Queue the instant acknowledgment and founder notification to run after the response.
+
+    Only when the feedback_ack_emails flag is on and the sender config is set. Never raises:
+    feedback is saved whatever happens to the email.
+    """
+    try:
+        if feedback_emails.acknowledgments_enabled():
+            background_tasks.add_task(feedback_emails.send_feedback_acknowledgments, kind, feedback_id)
+    except Exception:
+        logger.exception("Could not queue feedback acknowledgment for %s/%s", kind, feedback_id)
 
 
 # ── Challenge Feedback ──────────────────────────────────────────────
@@ -30,6 +47,7 @@ def upsert_challenge_feedback(
     challenge_id: str,
     body: ChallengeFeedbackCreate,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> ChallengeFeedbackResponse:
     """Create or update feedback for a challenge (one per user per challenge)."""
     _require_developer(current_user)
@@ -73,6 +91,9 @@ def upsert_challenge_feedback(
         "SELECT * FROM challenge_feedback WHERE user_id = ? AND challenge_id = ?",
         (current_user["id"], challenge_id),
     )
+    # The upsert keeps the original row id, so the ack is deduped per user and challenge.
+    if row and (row.get("comment") or "").strip():
+        _queue_acknowledgment(background_tasks, "challenge", row["id"])
     return ChallengeFeedbackResponse(**row)
 
 
@@ -124,6 +145,7 @@ def get_challenge_feedback_summary(
 def create_platform_feedback(
     body: PlatformFeedbackCreate,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> PlatformFeedbackResponse:
     """Submit general platform feedback."""
     feedback_id = secrets.token_hex(16)
@@ -147,6 +169,7 @@ def create_platform_feedback(
            WHERE pf.id = ?""",
         (feedback_id,),
     )
+    _queue_acknowledgment(background_tasks, "platform", feedback_id)
     return PlatformFeedbackResponse(**row)
 
 

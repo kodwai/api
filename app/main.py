@@ -25,6 +25,7 @@ if settings.SENTRY_DSN:
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
     )
 from app.routers import api_keys, auth, badges, blog, cards, challenges, developer_profiles, events, feature_flags, feedback, leaderboard, organizations, projects, proxy, quests, scores, sessions, share, sprint, submissions
+from app.routers import email as email_public, webhooks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +89,8 @@ app.include_router(events.router, prefix="/api")
 app.include_router(feature_flags.router, prefix="/api")
 app.include_router(sprint.router, prefix="/api")
 app.include_router(quests.router, prefix="/api")
+app.include_router(email_public.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
 
 # Admin routers
 from app.routers.admin import auth as admin_auth, dashboard as admin_dashboard, users as admin_users, challenges as admin_challenges
@@ -97,6 +100,7 @@ from app.routers.admin import blog as admin_blog, blog_images as admin_blog_imag
 from app.routers.admin import events as admin_events
 from app.routers.admin import feature_flags as admin_feature_flags
 from app.routers.admin import gamification as admin_gamification
+from app.routers.admin import automation as admin_automation, lifecycle as admin_lifecycle, growth as admin_growth
 app.include_router(admin_auth.router, prefix="/api/admin")
 app.include_router(admin_dashboard.router, prefix="/api/admin")
 app.include_router(admin_users.router, prefix="/api/admin")
@@ -116,6 +120,9 @@ app.include_router(admin_blog_images.router, prefix="/api/admin")
 app.include_router(admin_events.router, prefix="/api/admin")
 app.include_router(admin_feature_flags.router, prefix="/api/admin")
 app.include_router(admin_gamification.router, prefix="/api/admin")
+app.include_router(admin_automation.router, prefix="/api/admin")
+app.include_router(admin_lifecycle.router, prefix="/api/admin")
+app.include_router(admin_growth.router, prefix="/api/admin")
 
 
 @app.get("/api/health")

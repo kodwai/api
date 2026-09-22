@@ -1,18 +1,34 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from email.utils import format_datetime
 from typing import Optional
 from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from app.core.config import settings
 from app.core.database import fetch_all, fetch_one
+from app.services.site_urls import blog_post_url, site_url
 
 router = APIRouter(tags=["blog"])
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
+
+def _rfc822(value: str | None) -> str | None:
+    """A stored UTC timestamp ('YYYY-MM-DD HH:MM:SS' or ISO-8601) as an RSS pubDate, or None."""
+    if not value:
+        return None
+    try:
+        normalized = value.strip().replace(" ", "T", 1)
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    return format_datetime(dt, usegmt=True)
+
 
 def _get_post_tags(post_id: str) -> list[dict]:
     return fetch_all(
@@ -138,20 +154,21 @@ def blog_rss() -> Response:
         (),
     )
 
-    base_url = settings.LANDING_URL.rstrip("/")
-    now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    # Canonical www host even when LANDING_URL is set to the redirecting apex.
+    base_url = site_url()
+    now = format_datetime(datetime.now(timezone.utc), usegmt=True)
 
     items = []
     for p in posts:
-        pub_date = p["published_at"] or ""
-        link = f"{base_url}/blog/{p['slug']}"
+        pub_date = _rfc822(p["published_at"])
+        pub_date_line = f"\n      <pubDate>{xml_escape(pub_date)}</pubDate>" if pub_date else ""
+        link = blog_post_url(p["slug"])
         items.append(
             f"""    <item>
       <title>{xml_escape(p["title"])}</title>
       <link>{xml_escape(link)}</link>
       <description>{xml_escape(p["excerpt"])}</description>
-      <author>{xml_escape(p["author_name"])}</author>
-      <pubDate>{xml_escape(pub_date)}</pubDate>
+      <author>{xml_escape(p["author_name"])}</author>{pub_date_line}
       <guid isPermaLink="true">{xml_escape(link)}</guid>
     </item>"""
         )

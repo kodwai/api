@@ -16,6 +16,7 @@ from app.schemas.submission import (
     SubmissionResponse,
 )
 from app.services import entitlement_service
+from app.services.analytics_events import capture
 from app.services.model_registry import normalize_model
 
 router = APIRouter(tags=["submissions"])
@@ -93,6 +94,9 @@ def start_challenge(challenge_id: str, current_user: CurrentUser) -> StartSubmis
         if "unique" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_active_challenge_detail()) from e
         raise
+    capture(current_user["id"], "submission_started", {
+        "challenge_slug": challenge["slug"], "difficulty": challenge["difficulty"], "submission_id": submission_id,
+    })
 
     # Return full challenge config (including problem statement, starter files, test suite)
     challenge_config = {

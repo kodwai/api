@@ -25,7 +25,8 @@ def admin_login(body: AdminLoginRequest) -> dict:
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if not verify_password(body.password, user["password_hash"]):
+    # GitHub-only accounts have an empty password_hash, which bcrypt rejects with an error (500).
+    if not user["password_hash"] or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     if not user["is_superadmin"]:

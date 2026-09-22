@@ -300,7 +300,7 @@ def test_real_run_sends_once_across_repeated_runs(fake_resend, configured):
 
     params, options = fake_resend.calls[0]
     assert options == {"idempotency_key": f"d1_start:{user}"}
-    assert params["from"] == '"Ege at Kodwai" <hi@updates.kodwai.com>'
+    assert params["from"] == '"Hakan from Kodwai" <hi@updates.kodwai.com>'
     assert params["reply_to"] == "founder@example.com"
     assert params["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     assert params["text"] and params["html"]
@@ -447,7 +447,8 @@ def test_every_template_follows_the_copy_rules(template, monkeypatch):
             assert dash not in part, f"{template} contains {dash!r}"
         assert "KodWai" not in part and "Kodwai AI" not in part
         assert "five" not in part.lower() and "5 dimensions" not in part
-    assert "Ege\n" in email["text"]
+        assert not re.search(r"\bEge\b", part), f"{template} uses the founder's old first name"
+    assert "\n\nHakan\n" in email["text"]
     assert "You're getting this because" in email["text"]
     assert "1 Example Street, Istanbul" in email["text"]
 
@@ -466,6 +467,16 @@ def test_every_template_follows_the_copy_rules(template, monkeypatch):
 def test_html_part_escapes_user_values():
     email = email_templates.welcome(user_id="u1", name="<script>x</script>", starter_slug="bookshelf-rest-api")
     assert "<script>" not in email.html and "&lt;script&gt;" in email.html
+
+
+def test_welcome_and_verify_email_sign_as_hakan_never_ege():
+    welcome = email_templates.welcome(user_id="u1", name="Jane", starter_slug="bookshelf-rest-api")
+    verify = email_templates.verify_email(name="Jane Doe", verify_url="https://app.kodwai.com/verify?t=x")
+    assert "I'm Hakan, co-founder of kodwai." in welcome.text
+    for email in (welcome, verify):
+        assert "\n\nHakan\n" in email.text
+        for part in (email.subject, email.text, email.html):
+            assert "Ege" not in part
 
 
 def test_score_is_three_axes_and_rounds_like_the_app():

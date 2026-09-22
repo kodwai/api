@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # subdomain with replies routed to the founder's inbox; real lifecycle and
     # feedback sends refuse while EMAIL_REPLY_TO is empty.
     EMAIL_FROM_TRANSACTIONAL: str = "Kodwai <noreply@kodwai.com>"
-    EMAIL_FROM_LIFECYCLE: str = '"Ege at Kodwai" <hi@updates.kodwai.com>'
+    EMAIL_FROM_LIFECYCLE: str = '"Hakan from Kodwai" <hi@updates.kodwai.com>'
     EMAIL_REPLY_TO: str = ""
     # HMAC key for stateless one-click unsubscribe tokens (List-Unsubscribe links).
     UNSUBSCRIBE_SECRET: str = ""

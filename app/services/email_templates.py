@@ -3,7 +3,7 @@
 Every email is built from a list of blocks (paragraph, command, link, numbered list), so the text
 and HTML parts always say the same thing, and every interpolated value is escaped in the HTML.
 
-Copy rules (tests enforce the mechanical ones): founder voice, first person from Ege; one call to
+Copy rules (tests enforce the mechanical ones): founder voice, first person from Hakan; one call to
 action; no em or en dashes; UTM params (utm_source=email, utm_medium=lifecycle,
 utm_campaign=<template>) on every product link; a footer with the reason for receiving, the postal
 address when COMPANY_POSTAL_ADDRESS is set, and an unsubscribe link on lifecycle mail. The score is
@@ -134,7 +134,7 @@ def _compose(
     unsubscribe: str | None,
 ) -> RenderedEmail:
     greeting = f"Hi {name}," if name else "Hi,"
-    body_blocks: list[Block] = [P(greeting), *blocks, P("Ege")]
+    body_blocks: list[Block] = [P(greeting), *blocks, P("Hakan")]
     footer = _footer_lines(reason, unsubscribe)
 
     text = "\n\n".join(_text_block(b) for b in body_blocks)
@@ -209,7 +209,7 @@ def welcome(*, user_id: str, name: str, starter_slug: str, starter_title: str | 
     challenge = f"the starter challenge, {starter_title}" if starter_title else "the starter challenge"
     timer = f"{starter_minutes} minutes, " if starter_minutes else ""
     blocks: list[Block] = [
-        P("I'm Ege, co-founder of kodwai. Thanks for signing up."),
+        P("I'm Hakan, co-founder of kodwai. Thanks for signing up."),
         P(f"The quickest way to see what kodwai measures is {challenge} ({timer}solved on your own machine "
           "with your own agent). Run this where you want the workspace:"),
         Cmd(CHALLENGE_COMMAND.format(slug=starter_slug)),

@@ -1,6 +1,6 @@
 """Feedback email: founder replies, the instant acknowledgment, and the founder notification.
 
-Plain, founder-voice mail signed "Ege". Every user-supplied value is escaped in the HTML part,
+Plain, founder-voice mail signed "Hakan". Every user-supplied value is escaped in the HTML part,
 and the user's original text is quoted back so a reply has context. No em dashes in any copy.
 
 Templates (``email_sends.template``):
@@ -96,9 +96,9 @@ def _footer_html() -> str:
 
 
 def _signed(message: str) -> bool:
-    """True when the message already ends with Ege's sign-off, so it is not added twice."""
+    """True when the message already ends with Hakan's sign-off, so it is not added twice."""
     lines = [line for line in message.strip().splitlines() if line.strip()]
-    return bool(lines) and re.sub(r"[^a-z]", "", lines[-1].lower()) == "ege"
+    return bool(lines) and re.sub(r"[^a-z]", "", lines[-1].lower()) == "hakan"
 
 
 def _has_greeting(message: str) -> bool:
@@ -138,8 +138,8 @@ def render_feedback_reply(
     text_parts.append(body)
     html_parts.append(_paragraphs_html(body))
     if not _signed(body):
-        text_parts.append("Ege")
-        html_parts.append(_paragraphs_html("Ege"))
+        text_parts.append("Hakan")
+        html_parts.append(_paragraphs_html("Hakan"))
     if quoted:
         text_parts.append(f"You wrote:\n{_quote_text(quoted)}")
         html_parts.append(_paragraphs_html("You wrote:") + _blockquote_html(quoted))
@@ -166,8 +166,8 @@ def render_feedback_ack(
     extra = "If there's anything to add, just reply to this email."
     subject = f"Got your feedback on {about}"
 
-    text = f"{greeting}\n\n{line}\n\n{extra}\n\nEge\n\n"
-    html = _paragraphs_html(f"{greeting}\n\n{line}\n\n{extra}\n\nEge")
+    text = f"{greeting}\n\n{line}\n\n{extra}\n\nHakan\n\n"
+    html = _paragraphs_html(f"{greeting}\n\n{line}\n\n{extra}\n\nHakan")
     if quoted:
         text += f"You wrote:\n{_quote_text(quoted)}\n\n"
         html += _paragraphs_html("You wrote:") + _blockquote_html(quoted)

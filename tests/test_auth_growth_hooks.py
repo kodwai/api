@@ -171,7 +171,7 @@ def test_welcome_is_sent_once_on_verify_when_enabled(client, fake_resend, inline
     params, options = welcome[0]
     uid = fetch_one("SELECT id FROM users WHERE email = 'dev@example.com'")["id"]
     assert options == {"idempotency_key": f"welcome:{uid}"}
-    assert params["from"] == '"Ege at Kodwai" <hi@updates.kodwai.com>'
+    assert params["from"] == '"Hakan from Kodwai" <hi@updates.kodwai.com>'
     assert "List-Unsubscribe" in params["headers"]
 
     # The daily backstop sees it as sent.

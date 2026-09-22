@@ -211,7 +211,7 @@ def test_reply_dry_run_previews_without_sending(client, superadmin_id, fake_rese
     assert preview["text"].startswith("Hi Jane,")
     assert "Thanks for the report. I can reproduce it." in preview["text"]
     assert "> The CLI crashed when I ran submit <twice>." in preview["text"]
-    assert "\nEge\n" in preview["text"]
+    assert "\nHakan\n" in preview["text"]
     assert EM_DASH not in preview["text"] and EM_DASH not in preview["subject"]
 
     assert fake_resend.calls == []
@@ -496,10 +496,23 @@ def test_ack_skips_unsubscribed_user(client, fake_resend, mail_configured):
 
 def test_reply_template_keeps_existing_greeting_and_signoff():
     email = feedback_emails.render_feedback_reply(
-        kind="platform", user_name="Jane Doe", message="Hi Jane,\n\nFixed now.\n\nEge", original="It broke.",
+        kind="platform", user_name="Jane Doe", message="Hi Jane,\n\nFixed now.\n\nHakan", original="It broke.",
     )
     assert email["text"].count("Hi Jane") == 1
-    assert email["text"].count("\nEge\n") == 1
+    assert email["text"].count("\nHakan\n") == 1
+
+
+def test_feedback_emails_sign_as_hakan_never_ege():
+    reply = feedback_emails.render_feedback_reply(
+        kind="challenge", user_name="Jane Doe", message="Thanks, fixed now.", original="It broke.",
+        challenge_title="Bookshelf REST API",
+    )
+    ack = feedback_emails.render_feedback_ack(kind="platform", user_name="Jane Doe", original="It broke.")
+    for email in (reply, ack):
+        assert "\n\nHakan\n" in email["text"]
+        assert "<p style=\"margin: 0 0 14px 0;\">Hakan</p>" in email["html"]
+        for part in email.values():
+            assert "Ege" not in part
 
 
 def test_templates_escape_and_strip_header_newlines():

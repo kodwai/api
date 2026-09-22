@@ -84,7 +84,7 @@ def test_send_records_row_and_calls_resend(fake_resend, configured):
 
     params, options = fake_resend.calls[0]
     assert options == {"idempotency_key": f"welcome:{uid}"}
-    assert params["from"] == '"Ege at Kodwai" <hi@updates.kodwai.com>'
+    assert params["from"] == '"Hakan from Kodwai" <hi@updates.kodwai.com>'
     assert params["reply_to"] == "founder@example.com"
     assert params["to"] == ["dev@example.com"]
     assert params["text"] == "Hi" and params["html"] == "<p>Hi</p>"

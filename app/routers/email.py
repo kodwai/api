@@ -67,7 +67,7 @@ def _invalid_link() -> HTMLResponse:
         "This unsubscribe link doesn't look right",
         [
             "Your email app may have cut it off. Reply to any email from me and I'll unsubscribe you by hand.",
-            "Ege",
+            "Hakan",
         ],
         status_code=400,
     )

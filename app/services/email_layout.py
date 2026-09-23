@@ -65,12 +65,24 @@ class Quote:
 
 
 @dataclass(frozen=True)
+class Heading:
+    """A headline inside the card, e.g. the title of a product update."""
+    text: str
+
+
+@dataclass(frozen=True)
+class Bullets:
+    """A bulleted list of short items."""
+    items: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Small:
     """A muted note, e.g. a link that expires."""
     text: str
 
 
-Block = P | Cmd | Link | Numbered | Quote | Small
+Block = P | Cmd | Link | Numbered | Bullets | Heading | Quote | Small
 
 
 def _lines_html(text: str) -> str:
@@ -86,6 +98,10 @@ def text_block(block: Block) -> str:
         return f"{block.label}: {block.url}"
     if isinstance(block, Quote):
         return "\n".join(f"> {line}" if line else ">" for line in block.text.splitlines())
+    if isinstance(block, Heading):
+        return block.text
+    if isinstance(block, Bullets):
+        return "\n".join(f"- {item}" for item in block.items)
     return "\n".join(f"{i}. {item}" for i, item in enumerate(block.items, start=1))
 
 
@@ -120,10 +136,16 @@ def html_block(block: Block) -> str:
             )
             + "</blockquote>"
         )
+    if isinstance(block, Heading):
+        return (
+            f'<h1 style="margin: 0 0 20px 0; font-family: {SERIF}; font-size: 26px; font-weight: 400; '
+            f'line-height: 1.25; letter-spacing: -0.3px; color: {INK};">{escape(block.text)}</h1>'
+        )
+    tag = "ul" if isinstance(block, Bullets) else "ol"
     items = "".join(
         f'<li style="margin: 0 0 10px 0; padding-left: 4px;">{escape(item)}</li>' for item in block.items
     )
-    return f'<ol style="margin: 0 0 18px 0; padding-left: 22px;">{items}</ol>'
+    return f'<{tag} style="margin: 0 0 18px 0; padding-left: 22px;">{items}</{tag}>'
 
 
 # ---------------------------------------------------------------------------
@@ -167,11 +189,13 @@ def render(
     signature: str | None = "Hakan",
     signature_title: str | None = "Co-founder, kodwai",
     after: list[Block] | None = None,
+    top: list[Block] | None = None,
 ) -> tuple[str, str]:
     """Render (text, html) for one email. The text part is the source of truth: same words, same
     order. ``signature`` None leaves the sign-off out (e.g. a message that already ends with one);
-    ``after`` blocks follow the signature (e.g. the quoted original a reply answers)."""
-    text_parts: list[str] = []
+    ``after`` blocks follow the signature (e.g. the quoted original a reply answers); ``top`` blocks
+    come before the greeting (e.g. a headline)."""
+    text_parts: list[str] = [text_block(b) for b in top or []]
     if greeting:
         text_parts.append(greeting)
     text_parts += [text_block(b) for b in blocks]
@@ -183,7 +207,7 @@ def render(
         text += "\n\n\n" + "\n".join(line.text for line in footer)
     text += "\n"
 
-    body = ""
+    body = "".join(html_block(b) for b in top or [])
     if greeting:
         body += html_block(P(greeting))
     body += "".join(html_block(b) for b in blocks)

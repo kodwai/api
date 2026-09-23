@@ -57,6 +57,7 @@ def _first_name(name: str | None) -> str:
 
 def _greeting(name: str | None) -> str:
     first = _first_name(name)
+    first = first[:1].upper() + first[1:] if first.islower() else first
     return f"Hi {first}," if first else "Hi there,"
 
 

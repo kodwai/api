@@ -331,8 +331,18 @@ def _ctx_reengage(row: dict[str, Any], preview: bool) -> tuple[dict[str, Any] | 
 def _ctx_news(row: dict[str, Any], preview: bool) -> tuple[dict[str, Any] | None, str | None]:
     if not preview:
         return None, "news_is_manual"
-    return {**_common(row), "headline": "[headline]", "body": "[one or two short paragraphs]",
-            "url": f"{settings.LANDING_URL.rstrip('/')}/blog"}, None
+    # A realistic sample so the preview shows the real layout; real news is written per send.
+    return {**_common(row),
+            "headline": "Every challenge now has its own page",
+            "body": ("Quick update from me. You can now browse every kodwai challenge without signing in, "
+                     "see what each one asks for, and copy the exact command to start it.\n\n"
+                     "A few other things shipped this month:\n\n"
+                     "- A page that explains the AI Collaboration Score, axis by axis\n"
+                     "- Friendlier onboarding emails (you might be reading one)\n"
+                     "- Blog posts that are much easier to read on a phone\n\n"
+                     "As always, if something feels off, reply and tell me."),
+            "url": f"{settings.LANDING_URL.rstrip('/')}/challenges",
+            "link_label": "Browse the challenges"}, None
 
 
 def _hours(row: dict[str, Any], key: str = "age_hours") -> int:

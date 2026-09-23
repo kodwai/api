@@ -22,10 +22,21 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import settings
-from app.services.email_layout import Block, Cmd, FooterLine, Link, Numbered, P, Small, render
+from app.services.email_layout import (
+    Block,
+    Bullets,
+    Cmd,
+    FooterLine,
+    Heading,
+    Link,
+    Numbered,
+    P,
+    Small,
+    render,
+)
 from app.services.email_service import unsubscribe_url, with_utm
 
-__all__ = ["Block", "Cmd", "Link", "Numbered", "P", "Small", "RenderedEmail", "RENDERERS"]
+__all__ = ["Block", "Bullets", "Cmd", "Heading", "Link", "Numbered", "P", "Small", "RenderedEmail", "RENDERERS"]
 
 # The three score axes, in the live site's wording (landing Score section).
 SCORE_AXES: dict[str, tuple[str, str]] = {
@@ -72,13 +83,15 @@ def _compose(
     reason: str,
     unsubscribe: str | None,
     preheader: str,
+    top: list[Block] | None = None,
 ) -> RenderedEmail:
     text, html = render(
         subject=subject,
         preheader=preheader,
-        greeting=f"Hi {name}," if name else "Hi there,",
+        greeting=f"Hi {display_name(name)}," if name else "Hi there,",
         blocks=blocks,
         footer=_footer_lines(reason, unsubscribe),
+        top=top,
     )
     return RenderedEmail(template=template, subject=subject, text=text, html=html)
 
@@ -91,6 +104,12 @@ def first_name(full_name: str | None) -> str:
     """'Ada Lovelace' -> 'Ada'; empty or missing -> ''."""
     parts = (full_name or "").split()
     return parts[0][:60] if parts else ""
+
+
+def display_name(name: str | None) -> str:
+    """'hakan' -> 'Hakan'. Names typed all lowercase get a capital; anything else is left as typed."""
+    name = (name or "").strip()
+    return name[:1].upper() + name[1:] if name.islower() else name
 
 
 def format_score(score: float | int | None) -> str:
@@ -312,15 +331,31 @@ def reengage(*, user_id: str, name: str, new_count: int, newest_title: str | Non
                     preheader="New problems to point your agent at.")
 
 
+def _news_blocks(body: str) -> list[Block]:
+    """Paragraphs separated by blank lines; a paragraph whose lines all start with '- ' is a list."""
+    blocks: list[Block] = []
+    for paragraph in (chunk.strip() for chunk in body.split("\n\n")):
+        if not paragraph:
+            continue
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        if all(line.startswith("- ") for line in lines):
+            blocks.append(Bullets(tuple(line[2:].strip() for line in lines)))
+        else:
+            blocks.append(P(paragraph))
+    return blocks
+
+
 def news(*, user_id: str, name: str, headline: str, body: str, url: str, link_label: str = "Read more",
-         **_: Any) -> RenderedEmail:
-    """Stub for product news (marketing, consent only). Never auto-scheduled by the runner."""
+         preheader: str | None = None, **_: Any) -> RenderedEmail:
+    """Product news (marketing, consent only). Never auto-scheduled by the runner: the founder writes
+    the headline and body. The headline sits at the top of the card; '- ' lines become a list."""
     template = "news"
-    blocks: list[Block] = [P(paragraph) for paragraph in body.split("\n\n") if paragraph.strip()]
+    blocks = _news_blocks(body)
     blocks.append(Link(link_label, _utm(url, template)))
+    first_line = next((b.text for b in blocks if isinstance(b, P)), headline)
     return _compose(template, f"New on kodwai: {headline}", name, blocks,
                     reason=REASON_NEWS, unsubscribe=lifecycle_unsubscribe_url(user_id),
-                    preheader=headline)
+                    preheader=preheader or first_line[:110], top=[Heading(headline)])
 
 
 # ---------------------------------------------------------------------------

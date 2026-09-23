@@ -431,8 +431,8 @@ def test_ack_and_founder_notification_sent_when_enabled(client, fake_resend, mai
     assert len(fake_resend.calls) == 2
     by_to = {params["to"][0]: (params, options) for params, options in fake_resend.calls}
     ack, ack_opts = by_to["dev@example.com"]
-    assert ack["subject"] == "Got your feedback on kodwai"
-    assert "Got it. I read every message myself and usually reply within a day." in ack["text"]
+    assert ack["subject"] == "Thanks for the feedback on kodwai"
+    assert "I read every message myself, and I usually get back to people within a day." in ack["text"]
     assert "> Submit hangs after the tests finish." in ack["text"]
     assert ack_opts["idempotency_key"] == f"feedback_ack:platform:{fb['id']}"
     note, note_opts = by_to["founder@example.com"]
@@ -510,7 +510,7 @@ def test_feedback_emails_sign_as_hakan_never_ege():
     ack = feedback_emails.render_feedback_ack(kind="platform", user_name="Jane Doe", original="It broke.")
     for email in (reply, ack):
         assert "\n\nHakan\n" in email["text"]
-        assert "<p style=\"margin: 0 0 14px 0;\">Hakan</p>" in email["html"]
+        assert "Hakan<br><span" in email["html"]  # signature block: name, then role
         for part in email.values():
             assert "Ege" not in part
 

@@ -400,7 +400,8 @@ def test_preview_route(client, superadmin):
     assert body["subject"] == "Your first kodwai challenge is one command away"
     assert body["text"].startswith("Hi Grace,")
     assert "npx @kodwai/cli challenge bookshelf-rest-api" in body["text"]
-    assert "<pre" in body["html"]
+    assert "npx @kodwai/cli challenge bookshelf-rest-api" in body["html"]
+    assert body["html"].startswith("<!doctype html>")
 
     sample = client.get("/api/admin/lifecycle/preview", params={"template": "news"}, headers=_bearer(token))
     assert sample.status_code == 200

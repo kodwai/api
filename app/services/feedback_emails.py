@@ -1,6 +1,7 @@
 """Feedback email: founder replies, the instant acknowledgment, and the founder notification.
 
-Plain, founder-voice mail signed "Hakan". Every user-supplied value is escaped in the HTML part,
+Founder-voice mail signed "Hakan", in the shared layout (email_layout). Every user-supplied value is
+escaped in the HTML part,
 and the user's original text is quoted back so a reply has context. No em dashes in any copy.
 
 Templates (``email_sends.template``):
@@ -12,11 +13,11 @@ from __future__ import annotations
 
 import logging
 import re
-from html import escape
 from typing import Any
 
 from app.core.config import settings
 from app.core.database import fetch_one
+from app.services.email_layout import Block, FooterLine, Link, P, Quote, Small, render
 from app.services.email_service import send_tracked
 from app.services.feature_flags import flag_active_by_key
 
@@ -56,7 +57,7 @@ def _first_name(name: str | None) -> str:
 
 def _greeting(name: str | None) -> str:
     first = _first_name(name)
-    return f"Hi {first}," if first else "Hi,"
+    return f"Hi {first}," if first else "Hi there,"
 
 
 def _clip(text: str | None) -> str:
@@ -64,35 +65,9 @@ def _clip(text: str | None) -> str:
     return text if len(text) <= MAX_QUOTE_CHARS else text[:MAX_QUOTE_CHARS].rstrip() + " [...]"
 
 
-def _quote_text(text: str) -> str:
-    return "\n".join(f"> {line}" if line else ">" for line in text.splitlines())
-
-
-def _paragraphs_html(text: str) -> str:
-    """Escaped <p> per blank-line-separated paragraph, <br> for single newlines."""
-    blocks = [b for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
-    return "".join(
-        f'<p style="margin: 0 0 14px 0;">{"<br>".join(escape(line) for line in block.splitlines())}</p>'
-        for block in blocks
-    )
-
-
-def _blockquote_html(text: str) -> str:
-    return (
-        '<blockquote style="margin: 0 0 14px 0; padding: 0 0 0 12px; border-left: 3px solid #d1d5db; color: #4b5563;">'
-        f"{_paragraphs_html(text)}</blockquote>"
-    )
-
-
-def _wrap_html(inner: str) -> str:
-    return (
-        '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif; font-size: 15px; '
-        f'line-height: 1.55; color: #111827; max-width: 600px;">{inner}</div>'
-    )
-
-
-def _footer_html() -> str:
-    return f'<p style="margin: 20px 0 0 0; color: #6b7280; font-size: 13px;">{escape(FOOTER)}</p>'
+def _message_blocks(text: str) -> list[Block]:
+    """One paragraph block per blank-line-separated paragraph of an approved message."""
+    return [P(block.strip()) for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
 
 
 def _signed(message: str) -> bool:
@@ -111,6 +86,10 @@ def _about(kind: str, challenge_title: str | None) -> str:
     return "kodwai"
 
 
+def _you_wrote(quoted: str) -> list[Block]:
+    return [Small("You wrote:"), Quote(quoted)] if quoted else []
+
+
 # ---------------------------------------------------------------------------
 # Templates
 # ---------------------------------------------------------------------------
@@ -126,29 +105,17 @@ def render_feedback_reply(
     """The founder's reply. ``message`` is the approved reply body; greeting and sign-off are
     added unless the message already has them. Returns {subject, text, html}."""
     body = message.strip()
-    quoted = _clip(original)
-    about = _about(kind, challenge_title)
-    subject = f"Re: your feedback on {about}"
-
-    text_parts: list[str] = []
-    html_parts: list[str] = []
-    if not _has_greeting(body):
-        text_parts.append(_greeting(user_name))
-        html_parts.append(_paragraphs_html(_greeting(user_name)))
-    text_parts.append(body)
-    html_parts.append(_paragraphs_html(body))
-    if not _signed(body):
-        text_parts.append("Hakan")
-        html_parts.append(_paragraphs_html("Hakan"))
-    if quoted:
-        text_parts.append(f"You wrote:\n{_quote_text(quoted)}")
-        html_parts.append(_paragraphs_html("You wrote:") + _blockquote_html(quoted))
-    text_parts.append(f"{FOOTER} Reply to this email and it comes straight to me.")
-    html_parts.append(
-        f'<p style="margin: 20px 0 0 0; color: #6b7280; font-size: 13px;">'
-        f"{escape(FOOTER)} Reply to this email and it comes straight to me.</p>"
+    subject = f"Re: your feedback on {_about(kind, challenge_title)}"
+    text, html = render(
+        subject=subject,
+        preheader=_header_safe(body, 110),
+        greeting=None if _has_greeting(body) else _greeting(user_name),
+        blocks=_message_blocks(body),
+        signature=None if _signed(body) else "Hakan",
+        after=_you_wrote(_clip(original)),
+        footer=[FooterLine(f"{FOOTER} Reply to this email and it comes straight to me.")],
     )
-    return {"subject": subject, "text": "\n\n".join(text_parts) + "\n", "html": _wrap_html("".join(html_parts))}
+    return {"subject": subject, "text": text, "html": html}
 
 
 def render_feedback_ack(
@@ -159,21 +126,21 @@ def render_feedback_ack(
     challenge_title: str | None = None,
 ) -> dict[str, str]:
     """Instant, non-LLM acknowledgment sent right after feedback is submitted."""
-    quoted = _clip(original)
     about = _about(kind, challenge_title)
-    greeting = _greeting(user_name)
-    line = "Got it. I read every message myself and usually reply within a day."
-    extra = "If there's anything to add, just reply to this email."
-    subject = f"Got your feedback on {about}"
-
-    text = f"{greeting}\n\n{line}\n\n{extra}\n\nHakan\n\n"
-    html = _paragraphs_html(f"{greeting}\n\n{line}\n\n{extra}\n\nHakan")
-    if quoted:
-        text += f"You wrote:\n{_quote_text(quoted)}\n\n"
-        html += _paragraphs_html("You wrote:") + _blockquote_html(quoted)
-    text += f"{FOOTER}\n"
-    html += _footer_html()
-    return {"subject": subject, "text": text, "html": _wrap_html(html)}
+    subject = f"Thanks for the feedback on {about}"
+    text, html = render(
+        subject=subject,
+        preheader="I read every message myself and usually reply within a day.",
+        greeting=_greeting(user_name),
+        blocks=[
+            P("Thanks for taking the time to write this. I read every message myself, and I usually get "
+              "back to people within a day."),
+            P("If you think of anything else, just reply to this email."),
+        ],
+        after=_you_wrote(_clip(original)),
+        footer=[FooterLine(FOOTER)],
+    )
+    return {"subject": subject, "text": text, "html": html}
 
 
 def render_founder_notification(
@@ -209,23 +176,23 @@ def render_founder_notification(
     inbox_url = f"{settings.CLIENT_URL.rstrip('/')}/admin/feedback"
     quoted = _clip(original)
 
-    text_parts = [opener]
+    blocks: list[Block] = [P(opener)]
     if details:
-        text_parts.append("\n".join(details))
+        blocks.append(Small("\n".join(details)))
     if quoted:
-        text_parts.append(_quote_text(quoted))
-    text_parts.append(f"Reply from the admin inbox so the reply is tracked: {inbox_url}\nFeedback id: {kind}/{feedback_id}")
-
-    html = _paragraphs_html(opener)
-    if details:
-        html += _paragraphs_html("\n".join(details))
-    if quoted:
-        html += _blockquote_html(quoted)
-    html += (
-        f'<p style="margin: 0 0 14px 0;">Reply from the <a href="{escape(inbox_url)}">admin inbox</a> '
-        f"so the reply is tracked.<br>Feedback id: {escape(kind)}/{escape(feedback_id)}</p>"
+        blocks.append(Quote(quoted))
+    blocks += [
+        Link("Reply from the admin inbox", inbox_url),
+        Small(f"Replying there keeps the reply tracked. Feedback id: {kind}/{feedback_id}"),
+    ]
+    text, html = render(
+        subject=subject,
+        preheader=_header_safe(original, 110),
+        blocks=blocks,
+        signature=None,
+        footer=[FooterLine("Internal notification for the kodwai team.")],
     )
-    return {"subject": subject, "text": "\n\n".join(text_parts) + "\n", "html": _wrap_html(html)}
+    return {"subject": subject, "text": text, "html": html}
 
 
 # ---------------------------------------------------------------------------

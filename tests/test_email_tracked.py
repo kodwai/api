@@ -323,5 +323,5 @@ def test_invitation_email_escapes_names(fake_resend, monkeypatch):
 def test_session_invitation_email_escapes_names(fake_resend):
     email_service._send_session_invitation_email("to@example.com", "<img src=x>", "<i>Proj</i>", "s1", "tok", 60, "http://a")
     html = fake_resend.calls[0][0]["html"]
-    assert "<img src=x>" not in html and "&lt;img src=x&gt;" in html
+    assert "<img src=x>" not in html and "<img" not in html and "&lt;img" in html
     assert "<i>Proj</i>" not in html

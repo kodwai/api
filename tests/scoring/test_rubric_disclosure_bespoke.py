@@ -3,10 +3,13 @@ pre-challenge 'How you're scored' card shows the actual scoring dimensions, not
 just the profile's generic outcome signals."""
 from app.services.scoring.config import build_rubric
 
+TRAPS = [{"id": "t", "description": "d"}]
+
 
 def test_bespoke_rubric_surfaces_as_challenge_rubric_axis():
     cfg = {
         "profile": "spec_heavy",
+        "traps": TRAPS,
         "rubric": [
             {"name": "Functional Correctness", "weight": 10,
              "description": "Works as specified. **2/10**: barely runs. **5/10**: happy path only. **8/10**: edges handled. **10/10**: everything."},
@@ -29,7 +32,7 @@ def test_bespoke_rubric_surfaces_as_challenge_rubric_axis():
 
 
 def test_direction_and_lift_rescaled_to_bespoke_layout():
-    cfg = {"profile": "spec_heavy", "rubric": [{"name": "X", "weight": 5, "description": "x"}]}
+    cfg = {"profile": "spec_heavy", "traps": TRAPS, "rubric": [{"name": "X", "weight": 5, "description": "x"}]}
     out = build_rubric(cfg)
     direction = next(a for a in out["axes"] if a["name"] == "direction")
     lift = next(a for a in out["axes"] if a["name"] == "lift")
@@ -41,8 +44,20 @@ def test_direction_and_lift_rescaled_to_bespoke_layout():
 def test_no_rubric_keeps_legacy_profile_layout():
     # When no bespoke rubric, build_rubric must still return the profile's axes
     # (direction/outcome/lift) with their original points — no behaviour change.
-    out = build_rubric({"profile": "balanced"})
+    out = build_rubric({"profile": "balanced", "traps": TRAPS})
     axis_names = {a["name"] for a in out["axes"]}
     assert axis_names == {"direction", "outcome", "lift"}
     direction = next(a for a in out["axes"] if a["name"] == "direction")
     assert direction["points"] == 50  # balanced default
+
+
+def test_no_traps_drops_lift_and_shares_its_points():
+    # Mirrors engine._drop_trapless_lift: bespoke 45/45/10 becomes 50/50.
+    out = build_rubric({"profile": "spec_heavy", "rubric": [{"name": "X", "weight": 5, "description": "x"}]})
+    points = {a["name"]: a["points"] for a in out["axes"]}
+    assert points == {"direction": 50.0, "challenge_rubric": 50.0}
+
+    out = build_rubric({"profile": "balanced"})
+    points = {a["name"]: a["points"] for a in out["axes"]}
+    assert set(points) == {"direction", "outcome"}
+    assert abs(sum(points.values()) - 100) < 0.05

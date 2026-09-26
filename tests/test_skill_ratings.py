@@ -57,8 +57,8 @@ def test_scoring_upserts_skill_rating(client, monkeypatch):
         "(id, created_by, title, slug, description, problem_statement_md, "
         "difficulty, category, time_limit_minutes, scoring_config, is_public) "
         "VALUES ('c1', ?, 'Test Challenge', 'test-challenge', 'desc', 'Build X', "
-        "'easy', 'algo', 60, '{}', 1)",
-        (dev_user["id"],),
+        "'easy', 'algo', 60, ?, 1)",
+        (dev_user["id"], '{"traps": [{"id": "t", "description": "d"}]}'),
     )
 
     start_resp = client.post("/api/challenges/c1/start", headers=headers)

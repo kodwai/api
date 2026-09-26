@@ -6,7 +6,8 @@ def _public_challenge():
             "VALUES ('u1','a@a.com','x','A','company',1)")
     execute("INSERT INTO challenges (id, created_by, title, slug, description, problem_statement_md, "
             "difficulty, category, scoring_config, is_public) "
-            "VALUES ('c1','u1','T','t','d','p','easy','algo','{}',1)")
+            "VALUES ('c1','u1','T','t','d','p','easy','algo',?,1)",
+            ('{"traps": [{"id": "t", "description": "d"}]}',))
 
 
 def test_rubric_default_profile(client):

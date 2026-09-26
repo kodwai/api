@@ -112,7 +112,8 @@ def test_rubric_axis_with_key_has_three_signals_and_correct_score():
     - score reflects mocked dim scores
     - leaderboard_eligible == 1
     """
-    scoring_cfg = {"profile": "spec_heavy", "rubric": RUBRIC_3_DIMS}
+    scoring_cfg = {"profile": "spec_heavy", "rubric": RUBRIC_3_DIMS,
+                   "traps": [{"id": "t", "description": "d"}]}
 
     mocked_rubric_scores = {
         "Functional Correctness": 8.0,
@@ -169,6 +170,31 @@ def test_rubric_axis_with_key_has_three_signals_and_correct_score():
     assert row["leaderboard_eligible"] == 1
 
 
+def test_rubric_without_traps_drops_lift_and_rescales_to_50_50():
+    """No traps means Lift measures nothing: the axis is dropped and its 10 points
+    are shared pro rata, so direction and challenge_rubric are each out of 50."""
+    scoring_cfg = {"profile": "spec_heavy", "rubric": RUBRIC_3_DIMS}
+    scores = {"Functional Correctness": 8.0, "Code Readability": 6.0, "Edge-Case Handling": 4.0}
+    _seed(scoring_cfg, with_key=True, test_results={"passed": 5, "total": 10})
+
+    with patch("app.services.scoring.engine.decrypt_api_key", return_value="sk-test"), \
+         patch("app.services.scoring.llm.LLMJudge.judge",
+               return_value=_judgment_for_llm_signals(7.0)), \
+         patch("app.services.scoring.llm.LLMJudge.judge_rubric",
+               return_value=_rubric_judgment(scores)):
+        score_submission("s1")
+
+    row = fetch_one("SELECT score, score_breakdown FROM submissions WHERE id='s1'")
+    bd = json.loads(row["score_breakdown"])
+    points = {a["name"]: a["points"] for a in bd["axes"]}
+    assert points == {"direction": 50.0, "challenge_rubric": 50.0}
+
+    rubric_axis = next(a for a in bd["axes"] if a["name"] == "challenge_rubric")
+    expected = 50.0 * ((0.8 * 10 + 0.6 * 5 + 0.4 * 3) / 18.0)
+    assert abs(rubric_axis["score"] - expected) < 0.02
+    assert abs(row["score"] - sum(a["score"] for a in bd["axes"])) < 0.1
+
+
 # ---------------------------------------------------------------------------
 # 2. With rubric, NO key → challenge_rubric skipped, ineligible
 # ---------------------------------------------------------------------------
@@ -213,8 +239,8 @@ def test_no_rubric_uses_profile_axes():
     """A challenge WITHOUT a rubric must use the standard profile axes
     (direction/outcome/lift) and must NOT have a challenge_rubric axis.
     """
-    # Empty scoring_config → balanced profile
-    _seed("{}", with_key=True, test_results={"passed": 10, "total": 10})
+    # No profile → balanced; a trap keeps the Lift axis in play
+    _seed({"traps": [{"id": "t", "description": "d"}]}, with_key=True, test_results={"passed": 10, "total": 10})
 
     with patch("app.services.scoring.engine.decrypt_api_key", return_value="sk-test"), \
          patch("app.services.scoring.llm.LLMJudge.judge",

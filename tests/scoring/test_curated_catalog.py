@@ -184,3 +184,15 @@ def test_library_challenge_descriptions_are_non_empty():
         assert len(row["problem_statement_md"]) > 500, (
             f"slug={slug}: problem_statement_md seems too short ({len(row['problem_statement_md'])} chars)"
         )
+
+
+def test_every_curated_challenge_has_traps():
+    """Migration 042: without traps the Lift axis has nothing to measure, so every
+    curated challenge must carry at least 3 uniquely-id'd traps next to its rubric."""
+    for slug in ALL_15_SLUGS:
+        row = fetch_one("SELECT scoring_config FROM challenges WHERE slug = ?", (slug,))
+        assert row is not None, f"missing curated challenge {slug}"
+        cfg = resolve_config(row["scoring_config"])
+        assert len(cfg.traps) >= 3, f"{slug}: expected >= 3 traps, got {len(cfg.traps)}"
+        assert len({t.id for t in cfg.traps}) == len(cfg.traps), f"{slug}: duplicate trap ids"
+        assert cfg.rubric, f"{slug}: rubric lost when traps were added"

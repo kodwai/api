@@ -67,15 +67,15 @@ def test_submit_produces_v2_breakdown(client, monkeypatch):
     monkeypatch.setattr("app.core.config.settings.PLATFORM_ANTHROPIC_API_KEY", "sk-ant-test-platform")
     headers = _developer_headers(client)
 
-    # Insert a public challenge (scoring_config='{}' → resolves to balanced profile)
+    # Insert a public challenge (balanced profile; one trap so the Lift axis is scored)
     dev_user = fetch_one("SELECT id FROM users WHERE email='dev@test.com'")
     execute(
         "INSERT INTO challenges "
         "(id, created_by, title, slug, description, problem_statement_md, "
         "difficulty, category, time_limit_minutes, scoring_config, is_public) "
         "VALUES ('c1', ?, 'Test Challenge', 'test-challenge', 'desc', 'Build X', "
-        "'easy', 'algo', 60, '{}', 1)",
-        (dev_user["id"],),
+        "'easy', 'algo', 60, ?, 1)",
+        (dev_user["id"], '{"traps": [{"id": "t", "description": "d"}]}'),
     )
 
     # Start the challenge

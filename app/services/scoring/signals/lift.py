@@ -4,6 +4,10 @@ from app.services.scoring.models import ScoringContext, SignalResult
 
 
 def trap_coverage(ctx: ScoringContext) -> SignalResult:
+    # Nothing to cover: skip rather than let the judge fill in a placeholder score.
+    # engine._drop_trapless_lift then removes the Lift axis and hands its points on.
+    if not ctx.config.traps:
+        return SignalResult(0.0, "No edge-case traps are defined for this challenge.", skipped=True)
     if not ctx.judgment or "trap_coverage" not in ctx.judgment:
         return SignalResult(0.0, "LLM judging unavailable (no API key)", skipped=True)
     j = ctx.judgment["trap_coverage"]

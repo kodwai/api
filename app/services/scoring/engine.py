@@ -205,6 +205,20 @@ def _trace_confidence(ctx: ScoringContext) -> str:
     return "low"
 
 
+def _drop_trapless_lift(axes: list[AxisResult]) -> list[AxisResult]:
+    """Remove the Lift axis from a challenge with no traps and share its points
+    pro rata across the remaining axes, so the total stays the same and nobody
+    gains or loses points on an axis that measured nothing (e.g. 45/45/10 -> 50/50)."""
+    lift = next((a for a in axes if a.name == "lift"), None)
+    rest = [a for a in axes if a.name != "lift"]
+    rest_points = sum(a.points for a in rest)
+    if lift is None or rest_points <= 0:
+        return axes
+    factor = (rest_points + lift.points) / rest_points
+    return [AxisResult(a.name, round(a.points * factor, 2), round(a.score * factor, 2), a.signals)
+            for a in rest]
+
+
 def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
     axes: list[AxisResult] = []
     overall = 0.0
@@ -328,6 +342,10 @@ def _assemble(ctx: ScoringContext) -> ScoreBreakdown:
             axis_score = round(axis_cfg.points * (weighted_sum / weight_total), 2) if weight_total > 0 else 0.0
             overall += axis_score
             axes.append(AxisResult(axis_name, axis_cfg.points, axis_score, signal_details))
+
+    if not ctx.config.traps:
+        axes = _drop_trapless_lift(axes)
+        overall = sum(a.score for a in axes)
 
     # leaderboard_eligible is the canonical source of truth; supersedes the old
     # score_breakdown.$.analytical_skipped JSON flag written by migration 014.

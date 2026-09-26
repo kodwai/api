@@ -154,6 +154,17 @@ def build_rubric(raw_scoring_config) -> dict:
             "points": _BESPOKE_LAYOUT_POINTS["challenge_rubric"], "signals": rubric_signals,
         })
 
+    # No traps means no Lift axis: mirror engine._drop_trapless_lift, which
+    # shares Lift's points pro rata across the remaining axes.
+    lift = next((a for a in axes if a["name"] == "lift"), None)
+    rest = [a for a in axes if a["name"] != "lift"]
+    rest_points = sum(a["points"] for a in rest)
+    if not cfg.traps and lift is not None and rest_points > 0:
+        factor = (rest_points + lift["points"]) / rest_points
+        for a in rest:
+            a["points"] = round(a["points"] * factor, 2)
+        axes = rest
+
     return {"profile": cfg.profile, "axes": axes}
 
 
